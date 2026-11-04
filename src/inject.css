@@ -1,0 +1,49 @@
+/* Custom styling injected into facebook.com/messages.
+   Facebook's class names are obfuscated and change often, so prefer
+   role/aria selectors. Inspect with View > Toggle Developer Tools. */
+
+/* Hide Facebook's global top bar (search, feed, notifications). */
+html.messagebae div[role="banner"] {
+  display: none !important;
+}
+/* Facebook still reserves the banner's height; reclaim it. */
+html.messagebae {
+  --header-height: 0px !important;
+}
+
+/* Leave room for the macOS traffic lights (hiddenInset title bar). */
+html.messagebae body {
+  padding-top: 28px !important;
+  -webkit-app-region: drag;
+}
+html.messagebae body > * {
+  -webkit-app-region: no-drag;
+}
+
+/* Round the chat list panel to match the conversation cards. */
+html.messagebae [role="navigation"]:has(input[aria-label*="Search Messenger" i]),
+html.messagebae [role="navigation"]:has(input[placeholder*="Search Messenger" i]) {
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  margin: 0 0 8px 8px !important;
+}
+
+/* Mute toggle in the title bar, top right. */
+#messagebae-mute {
+  position: fixed;
+  top: 3px;
+  right: 10px;
+  z-index: 2147483647;
+  -webkit-app-region: no-drag;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: #b0b3b8;
+  font: 12px -apple-system, sans-serif;
+  cursor: pointer;
+  opacity: 0.7;
+}
+#messagebae-mute:hover { opacity: 1; background: rgba(128, 128, 128, 0.2); }
+#messagebae-mute.on { opacity: 1; color: #fff; background: #e4434b; }

@@ -1,0 +1,9 @@
+{
+  "shortcuts": {
+    "searchChats": "Cmd+K",
+    "messageBox": "Cmd+L",
+    "nextChat": "Ctrl+Tab",
+    "previousChat": "Ctrl+Shift+Tab",
+    "chatNumber": "Cmd"
+  }
+}
