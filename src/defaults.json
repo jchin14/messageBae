@@ -5,6 +5,7 @@
   "shortcuts": {
     "searchChats": "Cmd+K",
     "messageBox": "Cmd+L",
+    "attachFile": "Cmd+U",
     "nextChat": "Ctrl+Tab",
     "previousChat": "Ctrl+Shift+Tab",
     "chatNumber": "Cmd"

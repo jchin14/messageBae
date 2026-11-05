@@ -30,7 +30,19 @@ sync();
 contextBridge.exposeInMainWorld('messagebae', {
   notificationClicked: () => ipcRenderer.send('notification-click'),
   isMuted: () => muted,
+  attach: () => attachFile(),
 });
+
+// Open Facebook's file picker for the open chat. Prefer its own attach
+// button; fall back to the hidden file input.
+function attachFile() {
+  const main = document.querySelector('[role="main"]');
+  if (!main) return;
+  const btn = main.querySelector('[aria-label*="attach" i], [aria-label*="add files" i]');
+  if (btn) { btn.click(); return; }
+  const input = main.querySelector('input[type="file"]') || document.querySelector('input[type="file"]');
+  if (input) input.click();
+}
 
 // Wrap the page's Notification so clicks also bring the window forward.
 // Facebook's own click handler still runs and opens the chat.
@@ -73,7 +85,7 @@ function addControls() {
   addTitlebar();
   const bar = document.createElement('div');
   bar.id = 'messagebae-controls';
-  bar.append(clearBadgeButton(), alertButton(), muteButton());
+  bar.append(attachButton(), clearBadgeButton(), alertButton(), muteButton());
   document.documentElement.appendChild(bar);
 }
 
@@ -91,6 +103,15 @@ function addTitlebar() {
   strip.addEventListener('pointercancel', end);
   strip.addEventListener('dblclick', () => ipcRenderer.send('titlebar-dblclick'));
   document.documentElement.appendChild(strip);
+}
+
+function attachButton() {
+  const btn = document.createElement('button');
+  btn.id = 'messagebae-attach';
+  btn.textContent = '+';
+  btn.dataset.tip = 'Attach a photo or file (Cmd+U)';
+  btn.addEventListener('click', attachFile);
+  return btn;
 }
 
 function clearBadgeButton() {
@@ -389,3 +410,16 @@ function lockScroll() {
 }
 setInterval(lockScroll, 500);
 window.addEventListener('DOMContentLoaded', lockScroll);
+
+// Opening a chat puts the cursor in the message box, ready to type.
+let chatPath = location.pathname;
+function focusBox(tries) {
+  const box = document.querySelector('[role="main"] [contenteditable="true"]');
+  if (box && document.activeElement !== box) box.focus();
+  if ((!box || document.activeElement !== box) && tries > 0) setTimeout(() => focusBox(tries - 1), 100);
+}
+setInterval(() => {
+  if (location.pathname === chatPath) return;
+  chatPath = location.pathname;
+  if (/\/t\/[^/]+/.test(chatPath)) setTimeout(() => focusBox(20), 150);
+}, 150);

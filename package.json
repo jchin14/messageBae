@@ -1,6 +1,6 @@
 {
   "name": "messagebae",
-  "version": "0.26.4",
+  "version": "0.26.5",
   "private": true,
   "description": "A small macOS app for Facebook Messenger chats, with keyboard shortcuts, mute and a menu bar icon. Unofficial.",
   "main": "src/main.js",
@@ -9,7 +9,8 @@
     "dist": "node scripts/bump.js && electron-builder --mac",
     "icons": "electron scripts/make-icons.js",
     "release": "sh scripts/release.sh",
-    "bump": "node scripts/bump.js"
+    "bump": "node scripts/bump.js",
+    "virustotal": "sh scripts/virustotal.sh"
   },
   "build": {
     "appId": "au.jchin.messageBae",

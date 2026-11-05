@@ -23,6 +23,7 @@ Build the app with `npm run dist`. It bumps the version first, then builds into 
 | --- | --- |
 | Cmd+K | Search chats |
 | Cmd+L | Go to message box |
+| Cmd+U | Attach a photo or file |
 | Cmd+1–9 | Open chat 1–9 |
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous chat |
 | Esc ×2 | Clear the current line |
@@ -31,6 +32,7 @@ Build the app with `npm run dist`. It bumps the version first, then builds into 
 | Two-finger swipe sideways on a message | Reply to it |
 
 ## Buttons (top right)
+- **+** attaches a photo or file (also Cmd+U).
 - **✓** clears the badge count. New messages count up from 0.
 - **!** brings the window to the front when a message comes in.
 - **🔔** mutes notifications and sounds.
@@ -40,6 +42,9 @@ Build the app with `npm run dist`. It bumps the version first, then builds into 
 - Drag the edge of the chat list or the info panel to resize it.
 - Double-click the edge to reset.
 - Widths are saved between launches.
+
+## Images
+- Right-click an image to copy it, save it, or copy its address.
 
 ## Startup
 - Opens in front, unless you switch to another app while it loads. Then it waits in the background.

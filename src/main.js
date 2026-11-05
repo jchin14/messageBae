@@ -194,6 +194,17 @@ function createWindow() {
     }
   });
 
+  // Right-click an image: copy or save it.
+  win.webContents.on('context-menu', (_e, p) => {
+    if (p.mediaType !== 'image' || !p.srcURL) return;
+    Menu.buildFromTemplate([
+      { label: 'Copy Image', click: () => win.webContents.copyImageAt(p.x, p.y) },
+      { label: 'Save Image As…', click: () => win.webContents.downloadURL(p.srcURL) },
+      { type: 'separator' },
+      { label: 'Copy Image Address', click: () => require('electron').clipboard.writeText(p.srcURL) },
+    ]).popup({ window: win });
+  });
+
   // Handle Ctrl+Tab here too: menu accelerators for Tab are flaky when the
   // page has focus. preventDefault stops the menu firing a second time.
   win.webContents.on('before-input-event', (e, input) => {
@@ -279,6 +290,13 @@ function focusComposer() {
   })()`);
 }
 
+// Open the file picker to attach photos or files to the open chat.
+// userGesture=true lets the page open the picker from a script.
+function attachFile() {
+  showWindow();
+  win.webContents.executeJavaScript('window.messagebae && window.messagebae.attach()', true);
+}
+
 function buildMenu() {
   const k = settings.shortcuts;
   Menu.setApplicationMenu(Menu.buildFromTemplate([
@@ -314,6 +332,7 @@ function buildMenu() {
       submenu: [
         { label: 'Search Chats', accelerator: k.searchChats, click: focusSearch },
         { label: 'Message Box', accelerator: k.messageBox, click: focusComposer },
+        { label: 'Attach File…', accelerator: k.attachFile, click: attachFile },
         { type: 'separator' },
         { label: 'Next Chat', accelerator: k.nextChat, click: () => goToChat({ step: 1 }) },
         { label: 'Previous Chat', accelerator: k.previousChat, click: () => goToChat({ step: -1 }) },
