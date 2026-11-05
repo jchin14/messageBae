@@ -205,3 +205,187 @@ window.addEventListener('keydown', (e) => {
   skipBackspace += presses;
   ipcRenderer.send('press-backspace', presses);
 }, true);
+
+// Rounder corners on the conversation card (the coloured panel behind the
+// chat). Its classes are obfuscated, so find it from the message box: the
+// first rounded, filled ancestor that takes up most of the main area.
+function roundCard() {
+  const main = document.querySelector('[role="main"]');
+  const box = main && main.querySelector('[contenteditable="true"]');
+  if (!box) return;
+  for (let n = box.parentElement; n && n !== main; n = n.parentElement) {
+    if (n.offsetHeight < main.offsetHeight * 0.5) continue;
+    const cs = getComputedStyle(n);
+    if (parseFloat(cs.borderTopLeftRadius) > 0 && cs.backgroundColor !== 'rgba(0, 0, 0, 0)') {
+      n.classList.add('messagebae-card');
+      // Drop the bottom padding Facebook puts around the card, so it sits
+      // as low as the chat list.
+      for (let a = n.parentElement; a && a !== main.parentElement; a = a.parentElement) {
+        if (parseFloat(getComputedStyle(a).paddingBottom) > 0) a.classList.add('messagebae-nopad');
+      }
+      evenBottom(n, main);
+      return;
+    }
+  }
+}
+setInterval(roundCard, 1000);
+
+// Make the gap under the panels match the gap at the side of the window,
+// by nudging the main area's bottom margin until they're equal.
+function evenBottom(card, main) {
+  const r = card.getBoundingClientRect();
+  const side = innerWidth - r.right;
+  const diff = (innerHeight - r.bottom) - side;
+  if (side <= 0 || side > 60 || Math.abs(diff) < 1) return;
+  const m = parseFloat(getComputedStyle(main).marginBottom) - diff;
+  if (m < -80 || m > 40) return; // safety: never push it far off
+  main.style.setProperty('margin-bottom', m + 'px', 'important');
+}
+
+// Draggable panel widths: chat list (left) and chat info (right).
+// Drag the edge to resize; double-click it to reset. Widths are saved.
+const panels = {
+  left: { key: 'messagebae-width-left', els: [], col: null, handle: null },
+  right: { key: 'messagebae-width-right', els: [], col: null, handle: null },
+};
+const NAV = '[role="navigation"]:has(input[aria-label*="Search Messenger" i]), [role="navigation"]:has(input[placeholder*="Search Messenger" i])';
+const clampW = (w) => Math.round(Math.max(220, Math.min(w, innerWidth * 0.4)));
+const loadW = (p) => { try { return parseFloat(localStorage.getItem(p.key)) || 0; } catch { return 0; } };
+
+function findColumn(side) {
+  if (side === 'left') {
+    const nav = document.querySelector(NAV);
+    const input = nav && nav.querySelector('input');
+    if (!input || !input.offsetWidth) return null; // icons-only (narrow window)
+    const w = nav.getBoundingClientRect().width;
+    let top = nav;
+    while (top.parentElement && top.parentElement !== document.body &&
+           Math.abs(top.parentElement.getBoundingClientRect().width - w) <= 16) top = top.parentElement;
+    return top;
+  }
+  // Right: the tall panel sitting to the right of the conversation card.
+  const card = document.querySelector('.messagebae-card');
+  if (!card) return null;
+  const cr = card.getBoundingClientRect();
+  for (let n = card; n.parentElement && n.parentElement !== document.body; n = n.parentElement) {
+    for (const sib of n.parentElement.children) {
+      if (sib === n) continue;
+      const r = sib.getBoundingClientRect();
+      if (r.left >= cr.right - 2 && r.width > 150 && r.height > innerHeight * 0.4) return sib;
+    }
+  }
+  return null;
+}
+
+// Facebook sets widths on several nested wrappers, so size the column and
+// every same-width descendant, keeping each one's offset from the column.
+function applyWidth(p, w) {
+  const tw = p.col.getBoundingClientRect().width;
+  const found = [];
+  const walk = (el, depth) => {
+    const d = tw - el.getBoundingClientRect().width;
+    if (Math.abs(d) > 16) return;
+    found.push([el, d]);
+    if (depth < 8) for (const c of el.children) walk(c, depth + 1);
+  };
+  walk(p.col, 0);
+  clearWidth(p);
+  for (const [el, d] of found) {
+    for (const prop of ['width', 'min-width', 'max-width']) {
+      el.style.setProperty(prop, (w - d) + 'px', 'important');
+    }
+    // flex-basis only means width in a row; in a column it sets the height,
+    // which collapses the chat list. So only touch it for row children.
+    const pcs = el.parentElement && getComputedStyle(el.parentElement);
+    if (pcs && pcs.display.includes('flex') && pcs.flexDirection.startsWith('row')) {
+      el.style.setProperty('flex-basis', (w - d) + 'px', 'important');
+      el.style.setProperty('flex-shrink', '0', 'important');
+    }
+  }
+  p.els = found.map(([el]) => el);
+}
+
+function clearWidth(p) {
+  for (const el of p.els) {
+    for (const prop of ['width', 'min-width', 'max-width', 'flex-basis', 'flex-shrink']) el.style.removeProperty(prop);
+  }
+  p.els = [];
+}
+
+function placeHandle(side) {
+  const p = panels[side];
+  if (!p.col) { p.handle.style.display = 'none'; return; }
+  const r = p.col.getBoundingClientRect();
+  let x = side === 'left' ? r.right : r.left;
+  // Centre the handle in the gap between the panel and the conversation card.
+  const card = document.querySelector('.messagebae-card');
+  if (card) {
+    const c = card.getBoundingClientRect();
+    const nav = side === 'left' && document.querySelector(NAV);
+    const edge = nav ? nav.getBoundingClientRect().right : x;
+    const mid = side === 'left' ? (edge + c.left) / 2 : (c.right + r.left) / 2;
+    if (Math.abs(mid - x) < 40) x = mid;
+  }
+  Object.assign(p.handle.style, { display: 'block', left: (x - 4.5) + 'px', top: r.top + 'px', height: r.height + 'px' });
+}
+
+function makeHandle(side) {
+  const p = panels[side];
+  const h = document.createElement('div');
+  h.className = 'messagebae-resize';
+  h.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || !p.col) return;
+    e.preventDefault();
+    h.setPointerCapture(e.pointerId);
+    h.classList.add('dragging');
+    document.documentElement.classList.add('messagebae-resizing');
+    const r = p.col.getBoundingClientRect();
+    let w = 0;
+    const move = (ev) => {
+      w = clampW(side === 'left' ? ev.clientX - r.left : r.right - ev.clientX);
+      applyWidth(p, w);
+      placeHandle(side);
+    };
+    const end = () => {
+      h.removeEventListener('pointermove', move);
+      h.classList.remove('dragging');
+      document.documentElement.classList.remove('messagebae-resizing');
+      if (w) try { localStorage.setItem(p.key, String(w)); } catch {}
+    };
+    h.addEventListener('pointermove', move);
+    h.addEventListener('pointerup', end, { once: true });
+    h.addEventListener('pointercancel', end, { once: true });
+  });
+  h.addEventListener('dblclick', () => {
+    try { localStorage.removeItem(p.key); } catch {}
+    clearWidth(p);
+    requestAnimationFrame(() => placeHandle(side));
+  });
+  document.documentElement.appendChild(h);
+  return h;
+}
+
+function layoutPanels() {
+  if (!document.documentElement.classList.contains('messagebae')) return;
+  for (const side of ['left', 'right']) {
+    const p = panels[side];
+    if (!p.handle) p.handle = makeHandle(side);
+    if (p.handle.classList.contains('dragging')) continue;
+    p.col = findColumn(side);
+    if (!p.col) { clearWidth(p); placeHandle(side); continue; }
+    const saved = loadW(p);
+    if (saved && Math.abs(p.col.getBoundingClientRect().width - clampW(saved)) > 1) applyWidth(p, clampW(saved));
+    placeHandle(side);
+  }
+}
+setInterval(layoutPanels, 1000);
+window.addEventListener('resize', layoutPanels);
+
+// No page scroll on the Messenger screens (the chat list and conversation
+// scroll on their own). Other pages, like a profile, can still scroll.
+function lockScroll() {
+  const onChats = /^\/(messages|t)(\/|$)/.test(location.pathname);
+  document.documentElement.classList.toggle('messagebae-lock', onChats);
+}
+setInterval(lockScroll, 500);
+window.addEventListener('DOMContentLoaded', lockScroll);

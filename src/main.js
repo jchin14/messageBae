@@ -332,6 +332,12 @@ function buildMenu() {
         { role: 'front' },
       ],
     },
+    {
+      role: 'help',
+      submenu: [
+        { label: 'Buy Me a Coffee…', click: () => shell.openExternal('https://buymeacoffee.com/jchin14') },
+      ],
+    },
   ]));
 }
 

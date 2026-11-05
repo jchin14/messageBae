@@ -1,6 +1,6 @@
 {
   "name": "messagebae",
-  "version": "0.26.3",
+  "version": "0.26.4",
   "private": true,
   "description": "A small macOS app for Facebook Messenger chats, with keyboard shortcuts, mute and a menu bar icon. Unofficial.",
   "main": "src/main.js",
@@ -12,7 +12,7 @@
     "bump": "node scripts/bump.js"
   },
   "build": {
-    "appId": "com.jono.messagebae",
+    "appId": "au.jchin.messageBae",
     "productName": "messageBae",
     "mac": {
       "category": "public.app-category.social-networking",

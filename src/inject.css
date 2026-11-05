@@ -92,12 +92,56 @@ html.messagebae [role="navigation"]:has(input[placeholder*="Search Messenger" i]
 
 /* Trim Facebook's gap under the conversation panel. */
 html.messagebae [role="main"] {
-  margin-bottom: -6px !important;
+  margin-bottom: -20px !important;
 }
 
 /* Our 38px title bar padding makes full-height overlays (e.g. the photo
    viewer) taller than the window, so the page scrolls. Lock it while open. */
 html.messagebae:has([role="dialog"]),
 html.messagebae:has([role="dialog"]) body {
+  overflow: hidden !important;
+}
+
+/* Conversation card corners (element found in preload.js). */
+html.messagebae .messagebae-card {
+  border-radius: 18px !important;
+}
+html.messagebae .messagebae-nopad {
+  padding-bottom: 0 !important;
+}
+
+/* Drag handles on the panel edges (positioned in preload.js). */
+.messagebae-resize {
+  position: fixed;
+  display: none;
+  width: 9px;
+  z-index: 2147483644;
+  cursor: col-resize;
+}
+.messagebae-resize::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 3px;
+  height: 32px;
+  margin-top: -16px;
+  border-radius: 2px;
+  background: rgba(128, 128, 128, 0.35);
+  transition: background 0.15s;
+}
+.messagebae-resize:hover::after,
+.messagebae-resize.dragging::after {
+  background: rgba(128, 128, 128, 0.8);
+}
+html.messagebae-resizing,
+html.messagebae-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+/* No page scroll on Messenger screens (class toggled in preload.js). */
+html.messagebae-lock,
+html.messagebae-lock body {
   overflow: hidden !important;
 }
