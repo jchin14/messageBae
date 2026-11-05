@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, shell, session, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, Tray, shell, session, ipcMain, screen, systemPreferences } = require('electron');
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 const path = require('path');
@@ -32,9 +32,90 @@ function loadSettings() {
   } catch (err) {
     console.error(`Ignoring invalid ${file}: ${err.message}`);
   }
-  return { shortcuts: { ...DEFAULTS.shortcuts, ...user.shortcuts } };
+  return {
+    showBadge: user.showBadge ?? DEFAULTS.showBadge,
+    showMenuBarIcon: user.showMenuBarIcon ?? DEFAULTS.showMenuBarIcon,
+    openInBackground: user.openInBackground ?? DEFAULTS.openInBackground,
+    shortcuts: { ...DEFAULTS.shortcuts, ...user.shortcuts },
+  };
 }
+
+// Save one top-level setting without touching the rest of the file.
+function saveSetting(key, value) {
+  const file = settingsPath();
+  let user = {};
+  try { user = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+  user[key] = value;
+  fs.writeFileSync(file, JSON.stringify(user, null, 2) + '\n');
+}
+
+// Badge: unread count minus what was there at the last "Clear Badge".
+// The cleared count is saved so it survives a restart.
+const statePath = () => path.join(app.getPath('userData'), 'state.json');
+function loadBadgeBase() {
+  try { return JSON.parse(fs.readFileSync(statePath(), 'utf8')).badgeBase || 0; } catch { return 0; }
+}
+function saveBadgeBase() {
+  try { fs.writeFileSync(statePath(), JSON.stringify({ badgeBase }) + '\n'); } catch {}
+}
+let unread = 0;
+let badgeBase = loadBadgeBase();
+// The title shows no count while the page loads, so wait before
+// treating a lower count as "messages were read".
+let badgeSettled = false;
+function updateBadge() {
+  if (badgeSettled && unread < badgeBase) {
+    badgeBase = unread;
+    saveBadgeBase();
+  }
+  const n = unread - badgeBase;
+  const text = settings.showBadge && n > 0 ? String(n) : '';
+  app.dock.setBadge(text);
+  if (tray) tray.setTitle(text && ` ${text}`);
+}
+function clearBadge() {
+  badgeBase = unread;
+  saveBadgeBase();
+  updateBadge();
+}
+function toggleBadge(item) {
+  settings.showBadge = item.checked;
+  saveSetting('showBadge', item.checked);
+  updateBadge();
+  buildMenu();
+}
+const badgeItems = () => [
+  { label: 'Clear Badge', click: clearBadge },
+  { label: 'Show Badge Count', type: 'checkbox', checked: settings.showBadge, click: toggleBadge },
+  {
+    label: 'Show Menu Bar Icon',
+    type: 'checkbox',
+    checked: settings.showMenuBarIcon,
+    click: (item) => {
+      settings.showMenuBarIcon = item.checked;
+      saveSetting('showMenuBarIcon', item.checked);
+      updateTray();
+      buildMenu();
+    },
+  },
+  {
+    label: 'Open in Background on Launch',
+    type: 'checkbox',
+    checked: settings.openInBackground,
+    click: (item) => {
+      settings.openInBackground = item.checked;
+      saveSetting('openInBackground', item.checked);
+      buildMenu();
+    },
+  },
+];
 let settings;
+
+function showWindow() {
+  if (!win) return;
+  win.show();
+  win.focus();
+}
 
 // Hosts allowed to load inside the app (login, checkpoints, media).
 const isInternal = (url) => {
@@ -71,25 +152,33 @@ function createWindow() {
 
   win.loadURL(HOME);
 
-  // Launch politely: come to the front, unless the user moved to another app
-  // while we loaded. Then stay hidden until they switch to us (dock, Cmd+Tab,
-  // menu bar icon). macOS's "show without focus" still draws on top, so hiding
-  // is the only way to not interrupt them.
+  // On launch, come to the front unless the user switched to another app while
+  // we loaded (or Open in Background is on). Then stay hidden until they come
+  // to us. Showing without focus still draws on top, so hiding is the only way.
   win.once('ready-to-show', () => {
     const userMoved = !appActive && (leftAfterLaunch || frontApp() !== launchFront);
-    if (userMoved) app.once('did-become-active', showWindow);
-    else showWindow();
+    if (settings.openInBackground || userMoved) {
+      if (appActive) app.hide(); // hand focus back to the previous app
+      app.once('did-become-active', showWindow);
+    } else {
+      showWindow();
+    }
   });
 
   // Inject custom CSS on every page load.
   const css = fs.readFileSync(path.join(__dirname, 'inject.css'), 'utf8');
-  win.webContents.on('did-finish-load', () => win.webContents.insertCSS(css));
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.insertCSS(css);
+    if (!badgeSettled) setTimeout(() => { badgeSettled = true; updateBadge(); }, 15000);
+  });
 
   // Unread count from page title, e.g. "(3) Messenger | Facebook".
   win.on('page-title-updated', (_e, title) => {
     const m = title.match(/^\((\d+)\)/);
-    app.dock.setBadge(m ? m[1] : '');
-    if (tray) tray.setTitle(m ? ` ${m[1]}` : '');
+    const n = m ? Number(m[1]) : 0;
+    if (n > unread) onNewMessage();
+    unread = n;
+    updateBadge();
   });
 
   // External links open in the default browser.
@@ -108,6 +197,12 @@ function createWindow() {
   // Handle Ctrl+Tab here too: menu accelerators for Tab are flaky when the
   // page has focus. preventDefault stops the menu firing a second time.
   win.webContents.on('before-input-event', (e, input) => {
+    // Hold Esc to leave full screen (like Safari).
+    if (input.key === 'Escape' && input.type === 'keyDown' && input.isAutoRepeat && win.isFullScreen()) {
+      e.preventDefault();
+      win.setFullScreen(false);
+      return;
+    }
     const { nextChat, previousChat } = settings.shortcuts;
     const keys = input.shift ? previousChat : nextChat;
     if (keys !== (input.shift ? 'Ctrl+Shift+Tab' : 'Ctrl+Tab')) return;
@@ -192,8 +287,8 @@ function buildMenu() {
       submenu: [
         { role: 'about' },
         { type: 'separator' },
-        { label: 'Edit Shortcuts…', accelerator: 'Cmd+,', click: () => shell.openPath(settingsPath()) },
-        { label: 'Reload Shortcuts', click: () => { settings = loadSettings(); buildMenu(); } },
+        { label: 'Edit Settings…', accelerator: 'Cmd+,', click: () => shell.openPath(settingsPath()) },
+        { label: 'Reload Settings', click: () => { settings = loadSettings(); buildMenu(); updateBadge(); } },
         { type: 'separator' },
         { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
         { type: 'separator' },
@@ -210,6 +305,8 @@ function buildMenu() {
         { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
         { type: 'separator' },
         { role: 'togglefullscreen' },
+        { type: 'separator' },
+        ...badgeItems(),
       ],
     },
     {
@@ -226,7 +323,15 @@ function buildMenu() {
         })),
       ],
     },
-    { role: 'windowMenu' },
+    {
+      role: 'windowMenu',
+      submenu: [
+        { role: 'minimize' }, { role: 'zoom' },
+        { role: 'close' },
+        { type: 'separator' },
+        { role: 'front' },
+      ],
+    },
   ]));
 }
 
@@ -234,15 +339,14 @@ app.whenReady().then(() => {
   settings = loadSettings();
   buildMenu();
   createWindow();
-  createTray();
+  updateTray();
 });
-function showWindow() {
-  if (!win) return;
-  win.show();
-  win.focus();
-}
 
 // Menu bar icon: click toggles the window, shows unread count beside it.
+function updateTray() {
+  if (settings.showMenuBarIcon && !tray) createTray();
+  if (!settings.showMenuBarIcon && tray) { tray.destroy(); tray = null; }
+}
 function createTray() {
   tray = new Tray(path.join(__dirname, '..', 'assets', 'trayTemplate.png'));
   tray.setToolTip('messageBae');
@@ -250,15 +354,88 @@ function createTray() {
   tray.on('right-click', () => tray.popUpContextMenu(Menu.buildFromTemplate([
     { label: 'Show messageBae', click: showWindow },
     { type: 'separator' },
+    ...badgeItems(),
+    { type: 'separator' },
     { label: 'Quit', role: 'quit' },
   ])));
 }
 
 ipcMain.on('notification-click', showWindow);
-ipcMain.on('set-muted', (e, muted) => e.sender.setAudioMuted(!!muted));
-ipcMain.on('press-backspace', (e) => {
-  for (const type of ['keyDown', 'keyUp']) e.sender.sendInputEvent({ type, keyCode: 'Backspace' });
+let muted = false;
+let alertMode = false;
+ipcMain.on('set-muted', (e, m) => { muted = !!m; e.sender.setAudioMuted(muted); });
+ipcMain.on('clear-badge', clearBadge);
+ipcMain.on('set-alert', (_e, on) => { alertMode = !!on; });
+
+// Title bar drag: follow the cursor until the mouse is released.
+let dragTimer = null;
+ipcMain.on('titlebar-drag', (_e, phase) => {
+  clearInterval(dragTimer);
+  dragTimer = null;
+  if (phase !== 'start' || !win) return;
+  const start = screen.getCursorScreenPoint();
+  const [x0, y0] = win.getPosition();
+  let moving = false;
+  dragTimer = setInterval(() => {
+    const p = screen.getCursorScreenPoint();
+    const dx = p.x - start.x, dy = p.y - start.y;
+    if (!moving && Math.abs(dx) + Math.abs(dy) < 4) return;
+    moving = true;
+    win.setPosition(x0 + dx, y0 + dy);
+  }, 8);
 });
+
+// Title bar double-click: follow the macOS setting, and toggle back on a second double-click.
+let restoreBounds = null;
+ipcMain.on('titlebar-dblclick', () => {
+  if (!win) return;
+  if (win.isFullScreen()) return win.setFullScreen(false);
+  const action = systemPreferences.getUserDefault('AppleActionOnDoubleClick', 'string');
+  if (action === 'None') return;
+  if (action === 'Minimize') return win.minimize();
+  if (win.isMaximized()) return win.unmaximize();
+  const area = screen.getDisplayMatching(win.getBounds()).workArea;
+  const b = win.getBounds();
+  // Loose match: macOS can nudge the size a little after a fill.
+  const filled = b.width >= area.width - 40 && b.height >= area.height - 40;
+  if (filled) {
+    // No saved size (e.g. it opened filled): fall back to a centred default.
+    const w = Math.min(1200, area.width - 100), h = Math.min(800, area.height - 100);
+    const r = restoreBounds || {
+      x: Math.round(area.x + (area.width - w) / 2),
+      y: Math.round(area.y + (area.height - h) / 2),
+      width: w, height: h,
+    };
+    win.setBounds(r, true);
+    restoreBounds = null;
+  } else {
+    restoreBounds = b;
+    win.setBounds(area, true);
+  }
+});
+
+// Alert mode: on a new message, jump to the front and flash.
+function onNewMessage() {
+  if (!alertMode || !win) return;
+  win.show();
+  app.focus({ steal: true });
+  win.focus();
+  app.dock.bounce('critical');
+  win.webContents.send('flash');
+}
+
+// Esc clearing (see preload): Facebook's editor only reacts to real key presses.
+const pressBackspace = (wc, times = 1) => {
+  for (let i = 0; i < times; i++) {
+    for (const type of ['keyDown', 'keyUp']) wc.sendInputEvent({ type, keyCode: 'Backspace' });
+  }
+};
+ipcMain.on('press-backspace', (e, times) => pressBackspace(e.sender, Math.min(Number(times) || 1, 2)));
+ipcMain.on('clear-box', (e) => {
+  e.sender.selectAll();
+  pressBackspace(e.sender);
+});
+
 app.on('activate', showWindow);
 app.on('before-quit', () => {
   app.isQuitting = true;

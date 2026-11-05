@@ -13,11 +13,18 @@ html.messagebae {
 
 /* Leave room for the macOS traffic lights (hiddenInset title bar). */
 html.messagebae body {
-  padding-top: 28px !important;
-  -webkit-app-region: drag;
+  padding-top: 38px !important;
 }
-html.messagebae body > * {
-  -webkit-app-region: no-drag;
+
+/* Title bar strip: drag and double-click are handled in preload/main,
+   because the native drag region won't un-fill on a second double-click. */
+#messagebae-titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 38px;
+  z-index: 2147483645;
 }
 
 /* Round the chat list panel to match the conversation cards. */
@@ -25,25 +32,72 @@ html.messagebae [role="navigation"]:has(input[aria-label*="Search Messenger" i])
 html.messagebae [role="navigation"]:has(input[placeholder*="Search Messenger" i]) {
   border-radius: 12px !important;
   overflow: hidden !important;
-  margin: 0 0 8px 8px !important;
+  margin: 0 0 0 8px !important;
 }
 
-/* Mute toggle in the title bar, top right. */
-#messagebae-mute {
+/* Title bar controls, top right: "!" alert mode and mute. */
+#messagebae-controls {
   position: fixed;
-  top: 3px;
-  right: 10px;
+  top: 15px;
+  right: 14px;
   z-index: 2147483647;
-  -webkit-app-region: no-drag;
+  display: flex;
+  gap: 4px;
+}
+#messagebae-controls button {
   height: 22px;
+  min-width: 22px;
   padding: 0 8px;
   border: 0;
   border-radius: 11px;
   background: transparent;
   color: #b0b3b8;
-  font: 12px -apple-system, sans-serif;
+  font: 600 12px -apple-system, sans-serif;
   cursor: pointer;
   opacity: 0.7;
 }
-#messagebae-mute:hover { opacity: 1; background: rgba(128, 128, 128, 0.2); }
-#messagebae-mute.on { opacity: 1; color: #fff; background: #e4434b; }
+#messagebae-controls button { position: relative; }
+/* Tooltips: shown instantly below the button, right-aligned to stay on screen. */
+#messagebae-controls button[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: 28px;
+  right: 0;
+  white-space: nowrap;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: #3a3b3c;
+  color: #e4e6eb;
+  font: 400 12px -apple-system, sans-serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+#messagebae-controls button:hover { opacity: 1; background: rgba(128, 128, 128, 0.2); }
+#messagebae-controls button.on { opacity: 1; color: #fff; }
+#messagebae-mute.on { background: #e4434b; }
+#messagebae-alert.on { background: #f5a623; }
+
+/* Alert mode flash. */
+#messagebae-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  pointer-events: none;
+  animation: messagebae-flash 0.9s ease-out;
+}
+@keyframes messagebae-flash {
+  0%, 40% { box-shadow: inset 0 0 0 6px #f5a623; background: rgba(245, 166, 35, 0.15); }
+  20%, 100% { box-shadow: inset 0 0 0 6px transparent; background: transparent; }
+}
+
+/* Trim Facebook's gap under the conversation panel. */
+html.messagebae [role="main"] {
+  margin-bottom: -6px !important;
+}
+
+/* Our 38px title bar padding makes full-height overlays (e.g. the photo
+   viewer) taller than the window, so the page scrolls. Lock it while open. */
+html.messagebae:has([role="dialog"]),
+html.messagebae:has([role="dialog"]) body {
+  overflow: hidden !important;
+}

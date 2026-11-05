@@ -1,4 +1,7 @@
 {
+  "showBadge": true,
+  "showMenuBarIcon": true,
+  "openInBackground": false,
   "shortcuts": {
     "searchChats": "Cmd+K",
     "messageBox": "Cmd+L",
