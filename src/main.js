@@ -281,8 +281,6 @@ function createWindow() {
       items.push(
         { label: 'Copy Image', click: () => win.webContents.copyImageAt(p.x, p.y) },
         { label: 'Save Image As…', click: () => win.webContents.downloadURL(p.srcURL) },
-        { type: 'separator' },
-        { label: 'Copy Image Address', click: () => require('electron').clipboard.writeText(p.srcURL) },
       );
     }
     if (unsend) items.push({ type: 'separator' }, { label: 'Unsend…', click: () => win.webContents.send('unsend-do') });
@@ -418,6 +416,7 @@ function buildMenu() {
       role: 'appMenu',
       submenu: [
         { role: 'about' },
+        { label: 'Check for Updates…', click: () => checkForUpdates(true) },
         { type: 'separator' },
         { label: 'Edit Settings…', accelerator: 'Cmd+,', click: () => shell.openPath(settingsPath()) },
         { label: 'Reload Settings', click: () => { settings = loadSettings(); buildMenu(); updateBadge(); } },
@@ -477,7 +476,47 @@ function buildMenu() {
   ]));
 }
 
+// Update check: compare with the latest GitHub release. Runs on launch and
+// every 12 hours; Check for Updates… in the app menu runs it on demand.
+const RELEASES = 'https://github.com/jchin14/messageBae/releases/latest';
+const newer = (a, b) => {
+  const x = a.split('.').map(Number), y = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  return false;
+};
+let updateShown = null;
+async function checkForUpdates(manual = false) {
+  let latest;
+  try {
+    const r = await fetch('https://api.github.com/repos/jchin14/messageBae/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    latest = (await r.json()).tag_name.replace(/^v/, '');
+  } catch (err) {
+    ipcMain.emit('debug', null, `update check failed: ${err.message}`);
+    if (manual) dialog.showMessageBox(win, { message: "Couldn't check for updates", detail: 'Check your connection and try again.' });
+    return;
+  }
+  const current = app.getVersion();
+  ipcMain.emit('debug', null, `update check: current ${current}, latest ${latest}`);
+  if (!newer(latest, current)) {
+    if (manual) dialog.showMessageBox(win, { message: "You're up to date", detail: `messageBae ${current} is the latest version.` });
+    return;
+  }
+  if (!manual && updateShown === latest) return; // only nag once per version per launch
+  updateShown = latest;
+  const { response } = await dialog.showMessageBox(win, {
+    message: `messageBae ${latest} is available`,
+    detail: `You have ${current}. Download the new .dmg, quit messageBae, then drag it into Applications and choose Replace. Your settings stay.`,
+    buttons: ['Download', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response === 0) shell.openExternal(RELEASES);
+}
+
 app.whenReady().then(() => {
+  setTimeout(() => checkForUpdates(), 10000);
+  setInterval(() => checkForUpdates(), 12 * 60 * 60 * 1000);
   settings = loadSettings();
   buildMenu();
   createWindow();
@@ -508,6 +547,14 @@ ipcMain.on('attach', attachFile);
 // message buttons). The on-screen cursor doesn't move.
 ipcMain.handle('hover-at', (e, x, y) => {
   e.sender.sendInputEvent({ type: 'mouseMove', x: Math.round(x), y: Math.round(y) });
+});
+// A real left click at a point. Messenger ignores scripted clicks on some
+// elements (like search results).
+ipcMain.handle('click-at', (e, x, y) => {
+  const at = { x: Math.round(x), y: Math.round(y) };
+  e.sender.sendInputEvent({ type: 'mouseMove', ...at });
+  e.sender.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...at });
+  e.sender.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...at });
 });
 // Debug logs print when launched from a terminal (or with MESSAGEBAE_DEBUG=1).
 const DEBUG = process.stdout.isTTY || !!process.env.MESSAGEBAE_DEBUG;

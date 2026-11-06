@@ -15,8 +15,14 @@ read -r ok
 git push -q origin master
 
 # One commit with master's files, on top of the last public release.
+# Private files (CHANGES.md, CLAUDE.md) are left out of the public tree.
+IDX=$(mktemp)
+GIT_INDEX_FILE=$IDX git read-tree master
+GIT_INDEX_FILE=$IDX git rm -q --cached --ignore-unmatch CHANGES.md CLAUDE.md
+TREE=$(GIT_INDEX_FILE=$IDX git write-tree)
+rm -f "$IDX"
 PARENT=$(git rev-parse -q --verify public/main || true)
-COMMIT=$(git commit-tree "master^{tree}" ${PARENT:+-p "$PARENT"} -m "Release v$V")
+COMMIT=$(git commit-tree "$TREE" ${PARENT:+-p "$PARENT"} -m "Release v$V")
 git tag "v$V" "$COMMIT"
 git push -q public "$COMMIT:refs/heads/main" "v$V"
 echo "Released v$V"

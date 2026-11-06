@@ -9,6 +9,9 @@ A small macOS app for Facebook Messenger. It opens facebook.com/messages in its 
 ## Install
 Download the `.dmg` from the [latest release](https://github.com/jchin14/messageBae/releases/latest), open it and drag messageBae into Applications. It's signed and notarised by Apple.
 
+## Updates
+messageBae checks for a new version on launch and every 12 hours, or use **messageBae > Check for Updates…**. To update, download the new `.dmg`, quit messageBae, drag it into Applications and choose **Replace**. Your settings stay.
+
 ## Build from source
 Only if you know your way around the command line. Most people should use the release above.
 
@@ -37,6 +40,7 @@ Keep your hands on the keyboard. The shortcuts work like the ones you know from 
 | Key | Does |
 | --- | --- |
 | Cmd+K | Search chats |
+| Enter in search | Open the top result and jump to the message box |
 | Cmd+L | Go to message box |
 | Cmd+U | Attach a photo or file (or drag and drop) |
 | Cmd+B | Clear the badge count |
@@ -79,7 +83,7 @@ Keep your hands on the keyboard. The shortcuts work like the ones you know from 
 - **Reply** on any message or image.
 - **Unsend** on your own messages and images (Messenger asks to confirm).
 - **Copy Message** copies the whole message. **Copy** copies selected text.
-- On images: copy, save, or copy the address.
+- On images: copy or save.
 
 ## Links
 - Facebook links open in a new messageBae window. Other links open in your browser.

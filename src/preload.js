@@ -687,6 +687,87 @@ setInterval(() => {
   if (/\/t\/[^/]+/.test(chatPath)) setTimeout(() => focusBox(20), 150);
 }, 150);
 
+// Arrow keys in the chat search box. Messenger's own highlight wraps and
+// jumps to the bottom, so we keep our own: first Up or Down picks the top
+// result, Up stops at the top, Down stops at the last result.
+let searchIdx = -1;
+function searchInput(el) {
+  return el && el.matches && el.matches('input') && el.closest('[role="navigation"]') && el.value.trim() ? el : null;
+}
+function searchResults(input) {
+  // Search results live in a listbox outside the chat list (found through
+  // aria-controls). The normal chat list stays in the page underneath, so
+  // only use its links when there's no results list.
+  const id = input.getAttribute('aria-controls');
+  const box = (id && document.getElementById(id)) || document.querySelector('[role="listbox"]');
+  const shown = (el) => el.getClientRects().length && el.offsetHeight;
+  if (box) return [...box.querySelectorAll('[role="option"]')].filter(shown);
+  const nav = input.closest('[role="navigation"]');
+  return [...nav.querySelectorAll('a[href*="/t/"]')].filter((el) => shown(el) &&
+    (input.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
+}
+// The highlight is our own box drawn on top, as Facebook's styles and
+// clipping hide outlines on the result rows.
+function searchRing() {
+  const ring = document.getElementById('messagebae-searchring');
+  const el = document.querySelector('.messagebae-searchpick');
+  if (!ring) return;
+  if (!el || !el.isConnected) { ring.style.display = 'none'; return; }
+  const r = el.getBoundingClientRect();
+  Object.assign(ring.style, { display: 'block', left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
+}
+function searchMark(results) {
+  document.querySelectorAll('.messagebae-searchpick').forEach((el) => el.classList.remove('messagebae-searchpick'));
+  const el = results && results[searchIdx];
+  if (el) {
+    el.classList.add('messagebae-searchpick');
+    el.scrollIntoView({ block: 'nearest' });
+    if (!document.getElementById('messagebae-searchring')) {
+      const ring = document.createElement('div');
+      ring.id = 'messagebae-searchring';
+      document.documentElement.appendChild(ring);
+    }
+  }
+  searchRing();
+}
+document.addEventListener('scroll', searchRing, true);
+window.addEventListener('resize', searchRing);
+function searchReset() { searchIdx = -1; searchMark(null); }
+document.addEventListener('input', (e) => { if (e.target.closest && e.target.closest('[role="navigation"]')) searchReset(); }, true);
+document.addEventListener('focusout', (e) => { if (e.target.closest && e.target.closest('[role="navigation"]')) searchReset(); }, true);
+window.addEventListener('keydown', (e) => {
+  if ((e.key !== 'ArrowUp' && e.key !== 'ArrowDown') || e.shiftKey || e.metaKey || e.altKey || e.ctrlKey) return;
+  const input = searchInput(e.target);
+  if (!input) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  const results = searchResults(input);
+  if (!results.length) return;
+  if (searchIdx < 0) searchIdx = 0;
+  else searchIdx = Math.max(0, Math.min(searchIdx + (e.key === 'ArrowDown' ? 1 : -1), results.length - 1));
+  ipcRenderer.send('debug', `search ${e.key}: now on ${searchIdx} of ${results.length}`);
+  searchMark(results);
+}, true);
+
+// Enter in the chat search box opens the highlighted result (or the first
+// one), then puts the cursor in the message box.
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.isComposing || e.shiftKey || e.metaKey || e.altKey || e.ctrlKey) return;
+  const input = e.target;
+  if (!input.matches || !input.matches('input') || !input.closest('[role="navigation"]') || !input.value.trim()) return;
+  const picked = document.querySelector('.messagebae-searchpick');
+  const pick = (picked && picked.isConnected && picked) || searchResults(input)[0];
+  if (!pick) return ipcRenderer.send('debug', 'search Enter: no result found');
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  const link = pick.matches('a') ? pick : pick.querySelector('a[href*="/t/"]') || pick;
+  ipcRenderer.send('debug', `search Enter: opening ${pick.getAttribute('aria-label') || link.getAttribute('href')}`);
+  pick.scrollIntoView({ block: 'nearest' });
+  const r = pick.getBoundingClientRect();
+  ipcRenderer.invoke('click-at', r.left + Math.min(r.width / 2, 120), r.top + r.height / 2)
+    .then(() => setTimeout(() => focusBox(20), 300)); // also covers the chat that's already open
+}, true);
+
 // :emoji: shortcodes. Typing ":" plus 2+ letters shows a list of matches;
 // arrows move, Enter/Tab/click picks, Esc closes. A full ":fire:" swaps
 // straight away.

@@ -196,3 +196,15 @@ html.messagebae-lock body {
 }
 #messagebae-resetview.shown { display: block; }
 #messagebae-resetview:hover { background: rgba(128, 128, 128, 0.3); }
+
+/* Search result picked with the arrow keys (a box drawn over the row). */
+#messagebae-searchring {
+  position: fixed;
+  display: none;
+  z-index: 2147483645;
+  pointer-events: none;
+  border: 2px solid #0866ff;
+  border-radius: 10px;
+  background: rgba(8, 102, 255, 0.08);
+  box-sizing: border-box;
+}

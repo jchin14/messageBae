@@ -14,16 +14,29 @@ curl -sf -H "x-apikey: $VT_API_KEY" -F "file=@$F" "$URL" >/dev/null
 # Wait for the scan to finish (up to ~5 min), then print the result.
 for i in $(seq 20); do
   sleep 15
-  STATS=$(curl -sf -H "x-apikey: $VT_API_KEY" "https://www.virustotal.com/api/v3/files/$SHA" | jq -c .data.attributes.last_analysis_stats 2>/dev/null || true)
+  JSON=$(curl -sf -H "x-apikey: $VT_API_KEY" "https://www.virustotal.com/api/v3/files/$SHA" || true)
+  STATS=$(echo "$JSON" | jq -c .data.attributes.last_analysis_stats 2>/dev/null || true)
   BAD=$(echo "$STATS" | jq '(.malicious // 0) + (.suspicious // 0)' 2>/dev/null || true)
   TOTAL=$(echo "$STATS" | jq '(.malicious // 0) + (.suspicious // 0) + (.undetected // 0) + (.harmless // 0)' 2>/dev/null || true)
+  SKIP=$(echo "$STATS" | jq '(.timeout // 0) + (."confirmed-timeout" // 0) + (.failure // 0)' 2>/dev/null || true)
   [ -n "$TOTAL" ] && [ "$TOTAL" -gt 0 ] && break
 done
 URL="https://www.virustotal.com/gui/file/$SHA"
-echo "**SHA-256:** \`$SHA\`"
+MS=$(echo "$JSON" | jq -r '.data.attributes.last_analysis_results.Microsoft | .result // ({"undetected":"clean","harmless":"clean","type-unsupported":"not scanned"}[.category]) // "-"' 2>/dev/null || echo -)
 if [ -n "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
   [ "$BAD" = 0 ] && ICON=✅ || ICON=⚠️
-  echo "**VirusTotal:** $ICON $BAD / $TOTAL engines flagged it ([scan report]($URL))"
+  # Engines that time out or error are not passes, so show them as skipped.
+  [ -n "$SKIP" ] && [ "$SKIP" -gt 0 ] && SKIPPED=", $SKIP skipped" || SKIPPED=
+  DET="$ICON $BAD / $TOTAL$SKIPPED"
 else
-  echo "**VirusTotal:** [scan report]($URL) (still scanning)"
+  DET="still scanning"
 fi
+echo "**SHA-256:** \`$SHA\`"
+echo
+echo "## VirusTotal"
+echo
+echo "| File | Flagged by | Microsoft Defender | Full results |"
+echo "|---|---|---|---|"
+echo "| \`$(basename "$F")\` | $DET | $MS | [report]($URL) |"
+echo
+echo "Engines that did not finish in time are counted as skipped."
