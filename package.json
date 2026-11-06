@@ -1,12 +1,12 @@
 {
   "name": "messagebae",
-  "version": "0.26.5",
+  "version": "1.26.0",
   "private": true,
   "description": "A small macOS app for Facebook Messenger chats, with keyboard shortcuts, mute and a menu bar icon. Unofficial.",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "node scripts/bump.js && electron-builder --mac",
+    "dist": "node scripts/bump.js && APPLE_KEYCHAIN_PROFILE=messagebae electron-builder --mac",
     "icons": "electron scripts/make-icons.js",
     "release": "sh scripts/release.sh",
     "bump": "node scripts/bump.js",
@@ -18,7 +18,16 @@
     "mac": {
       "category": "public.app-category.social-networking",
       "target": "dmg",
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Messenger uses the microphone for calls and voice messages.",
+        "NSCameraUsageDescription": "Messenger uses the camera for video calls."
+      }
     },
     "files": [
       "src/**/*",
@@ -30,5 +39,8 @@
     "electron-builder": "^26.18.0"
   },
   "license": "PolyForm-Noncommercial-1.0.0",
-  "author": "Jonathan Chin <messageBae@jchin.au>"
+  "author": "Jonathan Chin <messageBae@jchin.au>",
+  "dependencies": {
+    "emojilib": "^3.0.12"
+  }
 }

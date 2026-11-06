@@ -2,12 +2,17 @@
   "showBadge": true,
   "showMenuBarIcon": true,
   "openInBackground": false,
+  "openLinksInBrowser": false,
+  "rememberWindowSize": false,
   "shortcuts": {
     "searchChats": "Cmd+K",
     "messageBox": "Cmd+L",
     "attachFile": "Cmd+U",
     "nextChat": "Ctrl+Tab",
     "previousChat": "Ctrl+Shift+Tab",
-    "chatNumber": "Cmd"
+    "chatNumber": "Cmd",
+    "clearBadge": "Cmd+B",
+    "notifyMode": "Cmd+N",
+    "mute": "Cmd+Shift+M"
   }
 }

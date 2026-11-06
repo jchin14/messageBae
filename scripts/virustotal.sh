@@ -11,5 +11,19 @@ SHA=$(shasum -a 256 "$F" | cut -d' ' -f1)
 # Files over 32 MB need a one-off upload URL.
 URL=$(curl -sf -H "x-apikey: $VT_API_KEY" https://www.virustotal.com/api/v3/files/upload_url | jq -r .data)
 curl -sf -H "x-apikey: $VT_API_KEY" -F "file=@$F" "$URL" >/dev/null
-echo "SHA-256: $SHA"
-echo "https://www.virustotal.com/gui/file/$SHA"
+# Wait for the scan to finish (up to ~5 min), then print the result.
+for i in $(seq 20); do
+  sleep 15
+  STATS=$(curl -sf -H "x-apikey: $VT_API_KEY" "https://www.virustotal.com/api/v3/files/$SHA" | jq -c .data.attributes.last_analysis_stats 2>/dev/null || true)
+  BAD=$(echo "$STATS" | jq '(.malicious // 0) + (.suspicious // 0)' 2>/dev/null || true)
+  TOTAL=$(echo "$STATS" | jq '(.malicious // 0) + (.suspicious // 0) + (.undetected // 0) + (.harmless // 0)' 2>/dev/null || true)
+  [ -n "$TOTAL" ] && [ "$TOTAL" -gt 0 ] && break
+done
+URL="https://www.virustotal.com/gui/file/$SHA"
+echo "**SHA-256:** \`$SHA\`"
+if [ -n "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
+  [ "$BAD" = 0 ] && ICON=✅ || ICON=⚠️
+  echo "**VirusTotal:** $ICON $BAD / $TOTAL engines flagged it ([scan report]($URL))"
+else
+  echo "**VirusTotal:** [scan report]($URL) (still scanning)"
+fi

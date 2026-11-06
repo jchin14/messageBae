@@ -35,7 +35,7 @@ html.messagebae [role="navigation"]:has(input[placeholder*="Search Messenger" i]
   margin: 0 0 0 8px !important;
 }
 
-/* Title bar controls, top right: "!" alert mode and mute. */
+/* Title bar controls, top right: "!" notify mode and mute. */
 #messagebae-controls {
   position: fixed;
   top: 15px;
@@ -47,16 +47,22 @@ html.messagebae [role="navigation"]:has(input[placeholder*="Search Messenger" i]
 #messagebae-controls button {
   height: 22px;
   min-width: 22px;
-  padding: 0 8px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   border: 0;
   border-radius: 11px;
   background: transparent;
   color: #b0b3b8;
   font: 600 12px -apple-system, sans-serif;
   cursor: pointer;
-  opacity: 0.7;
+  opacity: 0.9;
 }
 #messagebae-controls button { position: relative; }
+#messagebae-controls button svg { display: block; flex: none; }
+#messagebae-controls button span { padding-right: 4px; }
 /* Tooltips: shown instantly below the button, right-aligned to stay on screen. */
 #messagebae-controls button[data-tip]:hover::after {
   content: attr(data-tip);
@@ -77,7 +83,7 @@ html.messagebae [role="navigation"]:has(input[placeholder*="Search Messenger" i]
 #messagebae-mute.on { background: #e4434b; }
 #messagebae-alert.on { background: #f5a623; }
 
-/* Alert mode flash. */
+/* Notify mode flash. */
 #messagebae-flash {
   position: fixed;
   inset: 0;
@@ -92,7 +98,7 @@ html.messagebae [role="navigation"]:has(input[placeholder*="Search Messenger" i]
 
 /* Trim Facebook's gap under the conversation panel. */
 html.messagebae [role="main"] {
-  margin-bottom: -20px !important;
+  margin-bottom: -34px !important;
 }
 
 /* Our 38px title bar padding makes full-height overlays (e.g. the photo
@@ -134,6 +140,8 @@ html.messagebae .messagebae-nopad {
 .messagebae-resize.dragging::after {
   background: rgba(128, 128, 128, 0.8);
 }
+/* Hide the handles while a Messenger menu or dialog is open. */
+html:has([role="menu"], [role="dialog"], [role="listbox"]) .messagebae-resize { display: none !important; }
 html.messagebae-resizing,
 html.messagebae-resizing * {
   cursor: col-resize !important;
@@ -145,3 +153,46 @@ html.messagebae-lock,
 html.messagebae-lock body {
   overflow: hidden !important;
 }
+
+/* :emoji: suggestion list (built in preload.js). */
+#messagebae-emoji {
+  position: fixed;
+  display: none;
+  z-index: 2147483647;
+  min-width: 200px;
+  padding: 4px;
+  border-radius: 10px;
+  background: #3a3b3c;
+  color: #e4e6eb;
+  font: 400 13px -apple-system, sans-serif;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+#messagebae-emoji .item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+#messagebae-emoji .item.sel,
+#messagebae-emoji .item:hover { background: #0866ff; color: #fff; }
+#messagebae-emoji .e { font-size: 18px; }
+
+/* Reset view button, bottom right (preload.js). Only shown when the view has shifted. */
+#messagebae-resetview {
+  position: fixed;
+  right: 12px;
+  bottom: 8px;
+  z-index: 2147483643;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 11px;
+  background: rgba(128, 128, 128, 0.15);
+  color: #8a8d91;
+  font: 600 11px -apple-system, sans-serif;
+  cursor: pointer;
+  display: none;
+}
+#messagebae-resetview.shown { display: block; }
+#messagebae-resetview:hover { background: rgba(128, 128, 128, 0.3); }

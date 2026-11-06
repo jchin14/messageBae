@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, shell, session, ipcMain, screen, systemPreferences } = require('electron');
+const { app, BrowserWindow, Menu, Tray, shell, session, ipcMain, screen, systemPreferences, dialog } = require('electron');
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 const path = require('path');
@@ -36,6 +36,10 @@ function loadSettings() {
     showBadge: user.showBadge ?? DEFAULTS.showBadge,
     showMenuBarIcon: user.showMenuBarIcon ?? DEFAULTS.showMenuBarIcon,
     openInBackground: user.openInBackground ?? DEFAULTS.openInBackground,
+    openLinksInBrowser: user.openLinksInBrowser ?? DEFAULTS.openLinksInBrowser,
+    windowBounds: user.windowBounds || null,
+    rememberWindowSize: user.rememberWindowSize ?? DEFAULTS.rememberWindowSize,
+    lastWindowBounds: user.lastWindowBounds || null,
     shortcuts: { ...DEFAULTS.shortcuts, ...user.shortcuts },
   };
 }
@@ -47,6 +51,22 @@ function saveSetting(key, value) {
   try { user = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
   user[key] = value;
   fs.writeFileSync(file, JSON.stringify(user, null, 2) + '\n');
+}
+
+// Does a key press match an accelerator like "Cmd+Shift+M"?
+function matchesAccelerator(acc, input) {
+  if (!acc) return false;
+  const parts = acc.toLowerCase().split('+');
+  const key = parts.pop();
+  const has = (...names) => names.some((n) => parts.includes(n));
+  // Compare the physical key (KeyM, Digit1) too: with Cmd or Shift held,
+  // input.key can come through as something else.
+  const code = (input.code || '').toLowerCase().replace(/^(key|digit)/, '');
+  return (input.key.toLowerCase() === key || code === key)
+    && input.meta === has('cmd', 'command', 'cmdorctrl', 'commandorcontrol')
+    && input.control === has('ctrl', 'control')
+    && input.shift === has('shift')
+    && input.alt === has('alt', 'option');
 }
 
 // Badge: unread count minus what was there at the last "Clear Badge".
@@ -63,11 +83,17 @@ let badgeBase = loadBadgeBase();
 // The title shows no count while the page loads, so wait before
 // treating a lower count as "messages were read".
 let badgeSettled = false;
+// Facebook drops the count from the title for a moment (reloads, the
+// "X messaged you" title flash), so only lower the base once a lower
+// count has held for 10 seconds.
+let lowerTimer = null;
 function updateBadge() {
   if (badgeSettled && unread < badgeBase) {
-    badgeBase = unread;
-    saveBadgeBase();
-  }
+    if (!lowerTimer) lowerTimer = setTimeout(() => {
+      lowerTimer = null;
+      if (unread < badgeBase) { badgeBase = unread; saveBadgeBase(); updateBadge(); }
+    }, 10000);
+  } else if (lowerTimer) { clearTimeout(lowerTimer); lowerTimer = null; }
   const n = unread - badgeBase;
   const text = settings.showBadge && n > 0 ? String(n) : '';
   app.dock.setBadge(text);
@@ -85,7 +111,7 @@ function toggleBadge(item) {
   buildMenu();
 }
 const badgeItems = () => [
-  { label: 'Clear Badge', click: clearBadge },
+  { label: 'Clear Badge', accelerator: settings.shortcuts.clearBadge, click: clearBadge },
   { label: 'Show Badge Count', type: 'checkbox', checked: settings.showBadge, click: toggleBadge },
   {
     label: 'Show Menu Bar Icon',
@@ -95,6 +121,44 @@ const badgeItems = () => [
       settings.showMenuBarIcon = item.checked;
       saveSetting('showMenuBarIcon', item.checked);
       updateTray();
+      buildMenu();
+    },
+  },
+  {
+    label: 'Open Facebook Links in Browser',
+    type: 'checkbox',
+    checked: settings.openLinksInBrowser,
+    click: (item) => {
+      settings.openLinksInBrowser = item.checked;
+      saveSetting('openLinksInBrowser', item.checked);
+      buildMenu();
+    },
+  },
+  {
+    label: 'Restore Window Size After Close',
+    type: 'checkbox',
+    checked: settings.rememberWindowSize,
+    click: (item) => {
+      settings.rememberWindowSize = item.checked;
+      saveSetting('rememberWindowSize', item.checked);
+      if (item.checked) rememberBounds();
+      buildMenu();
+    },
+  },
+  {
+    label: 'Save Current Window Size and Position for Launch',
+    click: () => {
+      settings.windowBounds = win.getBounds();
+      saveSetting('windowBounds', settings.windowBounds);
+      buildMenu();
+    },
+  },
+  {
+    label: 'Forget Saved Window Size',
+    enabled: !!settings.windowBounds,
+    click: () => {
+      settings.windowBounds = null;
+      saveSetting('windowBounds', null);
       buildMenu();
     },
   },
@@ -135,9 +199,17 @@ function createWindow() {
   ses.setPermissionRequestHandler((_wc, perm, cb) =>
     cb(['notifications', 'media', 'clipboard-sanitized-write'].includes(perm)));
 
+  // Saved size and monitor, if that monitor is still connected. Remember
+  // Window Size (last size used) wins over the one-off saved size.
+  const saved = (settings.rememberWindowSize && settings.lastWindowBounds) || settings.windowBounds;
+  const onScreen = saved && screen.getAllDisplays().some(({ workArea: a }) =>
+    saved.x < a.x + a.width && saved.x + saved.width > a.x && saved.y < a.y + a.height && saved.y + saved.height > a.y);
   win = new BrowserWindow({
-    width: 1100,
-    height: 760,
+    ...(onScreen ? saved : (() => {
+      // Default: 1280x860, shrunk to fit smaller screens.
+      const a = screen.getPrimaryDisplay().workArea;
+      return { width: Math.min(1280, a.width - 80), height: Math.min(860, a.height - 60) };
+    })()),
     minWidth: 480,
     minHeight: 400,
     titleBarStyle: 'hiddenInset',
@@ -183,7 +255,8 @@ function createWindow() {
 
   // External links open in the default browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (isInternal(url)) return { action: 'allow' };
+    // Facebook links open in a new app window, unless the user prefers their browser.
+    if (isInternal(url) && !settings.openLinksInBrowser) return { action: 'allow' };
     shell.openExternal(url);
     return { action: 'deny' };
   });
@@ -194,15 +267,26 @@ function createWindow() {
     }
   });
 
-  // Right-click an image: copy or save it.
-  win.webContents.on('context-menu', (_e, p) => {
-    if (p.mediaType !== 'image' || !p.srcURL) return;
-    Menu.buildFromTemplate([
-      { label: 'Copy Image', click: () => win.webContents.copyImageAt(p.x, p.y) },
-      { label: 'Save Image As…', click: () => win.webContents.downloadURL(p.srcURL) },
-      { type: 'separator' },
-      { label: 'Copy Image Address', click: () => require('electron').clipboard.writeText(p.srcURL) },
-    ]).popup({ window: win });
+  // Right-click a message or image: reply, copy, save or unsend.
+  win.webContents.on('context-menu', async (_e, p) => {
+    const { reply, unsend, text } = await replyCheck();
+    const items = [];
+    if (reply) items.push({ label: 'Reply', click: () => win.webContents.send('reply-do') });
+    if (p.selectionText) items.push({ label: 'Copy', role: 'copy' });
+    if (text && p.mediaType !== 'image') {
+      items.push({ label: 'Copy Message', click: () => require('electron').clipboard.writeText(text) });
+    }
+    if (p.mediaType === 'image' && p.srcURL) {
+      if (items.length) items.push({ type: 'separator' });
+      items.push(
+        { label: 'Copy Image', click: () => win.webContents.copyImageAt(p.x, p.y) },
+        { label: 'Save Image As…', click: () => win.webContents.downloadURL(p.srcURL) },
+        { type: 'separator' },
+        { label: 'Copy Image Address', click: () => require('electron').clipboard.writeText(p.srcURL) },
+      );
+    }
+    if (unsend) items.push({ type: 'separator' }, { label: 'Unsend…', click: () => win.webContents.send('unsend-do') });
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
 
   // Handle Ctrl+Tab here too: menu accelerators for Tab are flaky when the
@@ -213,6 +297,17 @@ function createWindow() {
       e.preventDefault();
       win.setFullScreen(false);
       return;
+    }
+    // Our shortcuts win over Facebook's (e.g. Cmd+B is Meta's feedback
+    // dialog). Handle them here so the page never sees the key.
+    if (input.type === 'keyDown') {
+      const own = [
+        [settings.shortcuts.clearBadge, clearBadge],
+        [settings.shortcuts.notifyMode, () => win.webContents.send('toggle-mode', 'alert')],
+        [settings.shortcuts.mute, () => win.webContents.send('toggle-mode', 'mute')],
+      ].find(([acc]) => matchesAccelerator(acc, input));
+      if (input.meta) ipcMain.emit('debug', null, `key ${input.key} code ${input.code} shift=${input.shift} matched=${!!own}`);
+      if (own) { e.preventDefault(); own[1](); return; }
     }
     const { nextChat, previousChat } = settings.shortcuts;
     const keys = input.shift ? previousChat : nextChat;
@@ -225,6 +320,7 @@ function createWindow() {
 
   // Mac behaviour: closing the window hides it instead of quitting.
   win.on('close', (e) => {
+    rememberBounds();
     if (!app.isQuitting) {
       e.preventDefault();
       win.hide();
@@ -290,11 +386,29 @@ function focusComposer() {
   })()`);
 }
 
-// Open the file picker to attach photos or files to the open chat.
-// userGesture=true lets the page open the picker from a script.
-function attachFile() {
+// Pick files with the macOS dialog, then hand them to the page, which
+// pastes them into the open chat like a copied file.
+const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+  heic: 'image/heic', mp4: 'video/mp4', mov: 'video/quicktime', mp3: 'audio/mpeg', m4a: 'audio/mp4',
+  pdf: 'application/pdf', txt: 'text/plain', zip: 'application/zip' };
+async function attachFile() {
   showWindow();
-  win.webContents.executeJavaScript('window.messagebae && window.messagebae.attach()', true);
+  const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'] });
+  if (r.canceled || !r.filePaths.length) return;
+  const files = r.filePaths
+    .filter((f) => fs.statSync(f).size <= 100 * 1024 * 1024)
+    .map((f) => ({ name: path.basename(f), type: MIME[path.extname(f).slice(1).toLowerCase()] || '', data: fs.readFileSync(f) }));
+  if (files.length) win.webContents.send('attach-files', files);
+}
+
+// Ask the page what's under the right-click: a Reply button, message text.
+function replyCheck() {
+  return new Promise((resolve) => {
+    const done = (_e, r) => { clearTimeout(t); resolve(r || {}); };
+    const t = setTimeout(() => { ipcMain.removeListener('reply-check-result', done); ipcMain.emit('debug', null, 'right-click check timed out'); resolve({}); }, 1200);
+    ipcMain.once('reply-check-result', done);
+    win.webContents.send('reply-check');
+  });
 }
 
 function buildMenu() {
@@ -325,6 +439,9 @@ function buildMenu() {
         { role: 'togglefullscreen' },
         { type: 'separator' },
         ...badgeItems(),
+        { type: 'separator' },
+        { label: 'Notify Mode (!)', accelerator: k.notifyMode, click: () => win.webContents.send('toggle-mode', 'alert') },
+        { label: 'Mute', accelerator: k.mute, click: () => win.webContents.send('toggle-mode', 'mute') },
       ],
     },
     {
@@ -386,6 +503,15 @@ function createTray() {
 }
 
 ipcMain.on('notification-click', showWindow);
+ipcMain.on('attach', attachFile);
+// Move the page's mouse to a point (a real hover, so Messenger shows its
+// message buttons). The on-screen cursor doesn't move.
+ipcMain.handle('hover-at', (e, x, y) => {
+  e.sender.sendInputEvent({ type: 'mouseMove', x: Math.round(x), y: Math.round(y) });
+});
+// Debug logs print when launched from a terminal (or with MESSAGEBAE_DEBUG=1).
+const DEBUG = process.stdout.isTTY || !!process.env.MESSAGEBAE_DEBUG;
+ipcMain.on('debug', (_e, msg) => { if (DEBUG) console.log('[messageBae]', msg); });
 let muted = false;
 let alertMode = false;
 ipcMain.on('set-muted', (e, m) => { muted = !!m; e.sender.setAudioMuted(muted); });
@@ -439,7 +565,7 @@ ipcMain.on('titlebar-dblclick', () => {
   }
 });
 
-// Alert mode: on a new message, jump to the front and flash.
+// Notify mode: on a new message, jump to the front and flash.
 function onNewMessage() {
   if (!alertMode || !win) return;
   win.show();
@@ -456,13 +582,27 @@ const pressBackspace = (wc, times = 1) => {
   }
 };
 ipcMain.on('press-backspace', (e, times) => pressBackspace(e.sender, Math.min(Number(times) || 1, 2)));
+// Emoji names for :shortcode: typing (from emojilib), and inserting the
+// chosen emoji as real typed text (Facebook ignores scripted edits).
+ipcMain.handle('emoji-list', () => Object.entries(require('emojilib'))
+  .map(([e, k]) => [e, k.filter((w) => /^[a-z0-9_+-]+$/.test(w))])
+  .filter(([, k]) => k.length));
+ipcMain.on('insert-text', (e, text) => e.sender.insertText(String(text).slice(0, 16)));
 ipcMain.on('clear-box', (e) => {
   e.sender.selectAll();
   pressBackspace(e.sender);
 });
 
 app.on('activate', showWindow);
+// Restore Window Size After Close: save the window's normal (not full screen) size
+// and position whenever it's closed or the app quits.
+function rememberBounds() {
+  if (!settings.rememberWindowSize || !win || win.isDestroyed()) return;
+  settings.lastWindowBounds = win.getNormalBounds();
+  saveSetting('lastWindowBounds', settings.lastWindowBounds);
+}
 app.on('before-quit', () => {
+  rememberBounds();
   app.isQuitting = true;
   // Write login cookies to disk now, so a quick quit doesn't sign you out.
   session.fromPartition(PARTITION).cookies.flushStore();

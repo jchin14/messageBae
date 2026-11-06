@@ -24,25 +24,48 @@ function setMode(mode, on) {
   redraw.forEach((f) => f());
 }
 sync();
+ipcRenderer.on('toggle-mode', (_e, mode) => setMode(mode, mode === 'mute' ? !muted : !alertMode));
 
 // Let the page tell the main process a notification was clicked,
 // and check whether notifications are muted.
 contextBridge.exposeInMainWorld('messagebae', {
   notificationClicked: () => ipcRenderer.send('notification-click'),
   isMuted: () => muted,
-  attach: () => attachFile(),
 });
 
-// Open Facebook's file picker for the open chat. Prefer its own attach
-// button; fall back to the hidden file input.
-function attachFile() {
-  const main = document.querySelector('[role="main"]');
-  if (!main) return;
-  const btn = main.querySelector('[aria-label*="attach" i], [aria-label*="add files" i]');
-  if (btn) { btn.click(); return; }
-  const input = main.querySelector('input[type="file"]') || document.querySelector('input[type="file"]');
-  if (input) input.click();
-}
+// Ask the main process to show the file picker.
+function attachFile() { ipcRenderer.send('attach'); }
+
+// Hand picked files to the open chat. Try, in order: Facebook's hidden
+// file input, a paste into the message box, then a drop on the chat.
+ipcRenderer.on('attach-files', (_e, files) => {
+  const log = (m) => ipcRenderer.send('debug', `attach: ${m}`);
+  const dt = new DataTransfer();
+  files.forEach((f) => dt.items.add(new File([f.data], f.name, { type: f.type })));
+  const box = document.querySelector('[role="main"] [contenteditable="true"]')
+    || document.querySelector('div[role="textbox"][aria-label*="message" i]');
+  const inputs = [...document.querySelectorAll('input[type="file"]')];
+  log(`${files.length} file(s), box=${!!box}, inputs=${inputs.length}`);
+
+  const input = inputs.find((i) => box && i.closest('form, [role="main"]')?.contains(box))
+    || inputs.find((i) => i.multiple) || inputs[0];
+  if (input) {
+    input.files = dt.files;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    log('used file input');
+    return;
+  }
+  if (!box) { log('no message box'); return; }
+  box.focus();
+  const paste = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
+  box.dispatchEvent(paste);
+  if (paste.defaultPrevented) { log('pasted'); return; }
+  for (const type of ['dragenter', 'dragover', 'drop']) {
+    box.dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true }));
+  }
+  log('dropped (paste was ignored)');
+});
 
 // Wrap the page's Notification so clicks also bring the window forward.
 // Facebook's own click handler still runs and opens the chat.
@@ -80,13 +103,14 @@ window.addEventListener('DOMContentLoaded', () => {
   addControls();
 });
 
-// Title bar controls, top right: clear badge, "!" alert mode and mute.
+// Title bar controls, top right: clear badge, "!" notify mode and mute.
 function addControls() {
   addTitlebar();
   const bar = document.createElement('div');
   bar.id = 'messagebae-controls';
-  bar.append(attachButton(), clearBadgeButton(), alertButton(), muteButton());
+  bar.append(attachButton(), reloadButton(), clearBadgeButton(), alertButton(), muteButton());
   document.documentElement.appendChild(bar);
+  document.documentElement.appendChild(resetViewButton());
 }
 
 // Drag to move the window; double-click to fill / restore.
@@ -105,20 +129,52 @@ function addTitlebar() {
   document.documentElement.appendChild(strip);
 }
 
+// Title bar icons: one line style (Lucide-like), drawn in the button's colour.
+const ICON_PATHS = {
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  reload: '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  alert: '<path d="M12 4v10"/><path d="M12 19.5v.01"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  bellOff: '<path d="M8.7 3A6 6 0 0 1 18 8a21.3 21.3 0 0 0 .6 5"/><path d="M17 17H3s3-2 3-9a4.67 4.67 0 0 1 .3-1.7"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="m2 2 20 20"/>',
+};
+function setIcon(btn, name, label = '') {
+  btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name]}</svg>${label ? `<span>${label}</span>` : ''}`;
+}
+
 function attachButton() {
   const btn = document.createElement('button');
   btn.id = 'messagebae-attach';
-  btn.textContent = '+';
+  setIcon(btn, 'plus');
   btn.dataset.tip = 'Attach a photo or file (Cmd+U)';
   btn.addEventListener('click', attachFile);
+  return btn;
+}
+
+function reloadButton() {
+  const btn = document.createElement('button');
+  btn.id = 'messagebae-reload';
+  setIcon(btn, 'reload');
+  btn.dataset.tip = 'Reload Messenger to fix a stuck or shifted view (Cmd+R)';
+  btn.addEventListener('click', () => location.reload());
+  return btn;
+}
+
+// Bottom-right, only shown when the view has shifted: click snaps it back, Shift-click reloads.
+function resetViewButton() {
+  const btn = document.createElement('button');
+  btn.id = 'messagebae-resetview';
+  btn.textContent = '⤒ Reset view';
+  btn.title = 'Put the view back if it has shifted. Shift-click to reload Messenger';
+  btn.addEventListener('click', (e) => { if (e.shiftKey) location.reload(); else { resetView(); btn.classList.remove('shown'); } });
   return btn;
 }
 
 function clearBadgeButton() {
   const btn = document.createElement('button');
   btn.id = 'messagebae-clear';
-  btn.textContent = '✓';
-  btn.dataset.tip = 'Clear the badge count. To hide the badge, use View > Show Badge Count';
+  setIcon(btn, 'check');
+  btn.dataset.tip = 'Clear the badge count (Cmd+B). To hide the badge, use View > Show Badge Count';
   btn.addEventListener('click', () => ipcRenderer.send('clear-badge'));
   return btn;
 }
@@ -126,9 +182,9 @@ function clearBadgeButton() {
 function alertButton() {
   const btn = document.createElement('button');
   btn.id = 'messagebae-alert';
-  btn.textContent = '!';
+  setIcon(btn, 'alert');
   const render = () => {
-    btn.dataset.tip = alertMode ? 'Alert mode on: new messages bring the window to the front' : 'Alert mode: bring the window to the front on new messages';
+    btn.dataset.tip = alertMode ? 'Notify mode on: new messages bring the window to the front' : 'Notify mode: bring the window to the front on new messages (Cmd+N)';
     btn.classList.toggle('on', alertMode);
   };
   btn.addEventListener('click', () => setMode('alert', !alertMode));
@@ -141,8 +197,8 @@ function muteButton() {
   const btn = document.createElement('button');
   btn.id = 'messagebae-mute';
   const render = () => {
-    btn.textContent = muted ? '🔕 Muted' : '🔔';
-    btn.dataset.tip = muted ? 'Muted. Click to turn notifications and sounds back on' : 'Mute notifications and sounds';
+    setIcon(btn, muted ? 'bellOff' : 'bell');
+    btn.dataset.tip = muted ? 'Muted. Click to turn notifications and sounds back on' : 'Mute notifications and sounds (Cmd+Shift+M)';
     btn.classList.toggle('on', muted);
   };
   btn.addEventListener('click', () => setMode('mute', !muted));
@@ -151,11 +207,10 @@ function muteButton() {
   return btn;
 }
 
-// Two-finger swipe sideways over a message opens a reply to it.
-// The cursor is already over the message, so Messenger is showing its
-// hover buttons; find the nearest Reply button above the cursor's element.
+// Two-finger swipe sideways over a message or image opens a reply to it.
 let swipeSum = 0, swipeLast = 0, swipeDone = false;
 window.addEventListener('wheel', (e) => {
+  if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && !swipeSum) ipcRenderer.send('debug', `wheel dx=${e.deltaX} over <${e.target.tagName.toLowerCase()}>`);
   const now = Date.now();
   if (now - swipeLast > 300) { swipeSum = 0; swipeDone = false; }
   swipeLast = now;
@@ -163,21 +218,194 @@ window.addEventListener('wheel', (e) => {
   swipeSum += e.deltaX;
   if (Math.abs(swipeSum) < 60) return;
   swipeDone = true;
-  const btn = findReply(e.target);
-  if (btn) btn.click();
+  replyButtonAt(e.clientX, e.clientY).then((btn) => {
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    ipcRenderer.send('debug', `swipe at ${e.clientX},${e.clientY} over <${el && el.tagName.toLowerCase()}> target <${e.target.tagName.toLowerCase()}> reply=${btn ? btn.getAttribute('aria-label') : 'none'} buttons=${document.querySelectorAll(REPLY).length}`);
+    if (btn) btn.click();
+    // Opening a reply can scroll the whole page; put it back.
+    setTimeout(() => { document.documentElement.scrollTop = document.documentElement.scrollLeft = 0; document.body.scrollTop = document.body.scrollLeft = 0; }, 100);
+  });
 }, { capture: true, passive: true });
 
+// Find the Reply button for the message under a point. Messenger shows it
+// on hover. Images can sit under overlays, so check every element at the
+// point, and nudge a hover if the buttons aren't showing yet.
 const REPLY = '[aria-label="Reply" i], [aria-label^="Reply " i], [aria-label*="reply to" i]';
-function findReply(el) {
+// The vertical band of the message under an element: its row if
+// Messenger marks one, otherwise the element itself (e.g. the image).
+// A row can hold several messages, so the band is the hovered element
+// itself (the image or the text), with a little slack for padding.
+function messageBand(el) {
+  const r = el.getBoundingClientRect();
+  return [r.top - 40, r.bottom + 40, (r.top + r.bottom) / 2];
+}
+// Only accept a Reply button that sits level with that message, so a
+// button left showing on a neighbouring message is never used.
+function inBand(btn, [top, bottom]) {
+  const r = btn.getBoundingClientRect();
+  const cy = r.top + r.height / 2;
+  return r.height > 0 && cy >= top && cy <= bottom;
+}
+function findReply(el, band, sel = REPLY) {
   const main = document.querySelector('[role="main"]');
-  for (let n = el; n && n !== main && n !== document.body; n = n.parentElement) {
-    const btn = n.querySelector(REPLY);
+  if (!main || !main.contains(el)) return null;
+  const row = el.closest('[role="row"]');
+  const scope = row && main.contains(row) ? row : main;
+  // If more than one fits, take the one closest to the message's middle.
+  const mid = (b) => { const r = b.getBoundingClientRect(); return Math.abs(r.top + r.height / 2 - band[2]); };
+  return [...scope.querySelectorAll(sel)].filter((b) => inBand(b, band)).sort((a, b) => mid(a) - mid(b))[0] || null;
+}
+function replyButtonNow(x, y, sel = REPLY) {
+  for (const el of document.elementsFromPoint(x, y)) {
+    const btn = findReply(el, messageBand(el), sel);
     if (btn) return btn;
   }
   return null;
 }
+async function replyButtonAt(x, y, sel = REPLY) {
+  const btn = replyButtonNow(x, y, sel);
+  if (btn) return btn;
+  const el = document.elementFromPoint(x, y);
+  if (!el) return null;
+  // Messenger only shows the buttons on a real hover. Images don't always
+  // trigger it, so also hover the empty space beside the image in its row.
+  const spots = [[x, y]];
+  const img = el.closest('img, [role="img"]') || el.querySelector('img');
+  const main = document.querySelector('[role="main"]');
+  if (img && main) {
+    const r = img.getBoundingClientRect(), m = main.getBoundingClientRect();
+    const cy = Math.round(r.top + r.height / 2);
+    if (r.left - m.left > 60) spots.push([Math.round(r.left - 30), cy]);
+    if (m.right - r.right > 60) spots.push([Math.round(r.right + 30), cy]);
+  }
+  for (const [hx, hy] of spots) {
+    await ipcRenderer.invoke('hover-at', hx, hy);
+    for (let i = 0; i < 6; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      const found = findReply(el, messageBand(el), sel);
+      if (found) return found;
+    }
+  }
+  return null;
+}
 
-// Brief flash over the page, used by alert mode.
+// Double-click or press-and-hold a message to open its reactions.
+const REACT = '[aria-label="React" i], [aria-label^="React " i]';
+function reactTarget(e) {
+  const main = document.querySelector('[role="main"]');
+  const t = e.target;
+  if (!main || !main.contains(t)) return false;
+  return !t.closest('[contenteditable="true"], input, textarea, button, a, [role="button"], [role="menu"], [role="dialog"]');
+}
+function openReacts(x, y) {
+  ipcRenderer.send('debug', `react try at ${x},${y} over <${document.elementFromPoint(x, y)?.tagName.toLowerCase()}> buttons=${document.querySelectorAll(REACT).length}`);
+  replyButtonAt(x, y, REACT).then((btn) => {
+    ipcRenderer.send('debug', `react at ${x},${y} button=${btn ? btn.getAttribute('aria-label') : 'none'}`);
+    if (btn) { window.getSelection()?.removeAllRanges(); btn.click(); }
+  });
+}
+window.addEventListener('dblclick', (e) => {
+  if (reactTarget(e)) openReacts(e.clientX, e.clientY);
+}, true);
+// Press and hold, then let go: the picker opens on release, so the
+// release itself can't close it (opening it mid-press didn't stick).
+let holdStart = null, holdAt = 0, holdFired = false;
+window.addEventListener('pointerdown', (e) => {
+  holdStart = null; holdFired = false;
+  if (e.button !== 0 || !reactTarget(e)) return;
+  holdStart = [e.clientX, e.clientY]; holdAt = Date.now();
+}, true);
+window.addEventListener('pointermove', (e) => {
+  if (holdStart && Math.hypot(e.clientX - holdStart[0], e.clientY - holdStart[1]) > 10) holdStart = null;
+}, true);
+window.addEventListener('pointercancel', () => { holdStart = null; }, true);
+// A hold that started a drag (text or image) would never release here; stop the drag.
+window.addEventListener('dragstart', (e) => { if (holdStart) e.preventDefault(); }, true);
+const holdSwallow = (e) => {
+  if (e.type === 'pointerup' && holdStart) {
+    const held = Date.now() - holdAt, at = holdStart;
+    holdStart = null;
+    ipcRenderer.send('debug', `hold released after ${held}ms`);
+    if (held >= 300) { holdFired = true; setTimeout(() => openReacts(...at), 30); }
+  }
+  if (!holdFired) return;
+  e.stopImmediatePropagation(); e.preventDefault();
+  if (e.type === 'click') holdFired = false;
+};
+for (const t of ['pointerup', 'mouseup', 'click']) window.addEventListener(t, holdSwallow, true);
+
+// Right-click Reply: remember where the menu opened, tell the main
+// process if there's a message there, and click its Reply when chosen.
+let ctxPoint = null, ctxReply = null;
+// Start looking for the buttons straight away, before the main process asks.
+let ctxLookup = null;
+window.addEventListener('contextmenu', (e) => {
+  ctxPoint = [e.clientX, e.clientY];
+  const t0 = Date.now();
+  ctxLookup = replyButtonAt(...ctxPoint).then((btn) => {
+    ipcRenderer.send('debug', `right-click lookup took ${Date.now() - t0}ms`);
+    return btn;
+  });
+}, true);
+// Unsend goes through the message's More button, then Messenger's own
+// Unsend menu item and confirm dialog. Only your messages (right side).
+const MORE = '[aria-label="More" i], [aria-label^="More " i]';
+let ctxMore = null;
+function isOwnAt(x, y) {
+  const main = document.querySelector('[role="main"]');
+  if (!main) return false;
+  const el = document.elementsFromPoint(x, y).find((e) => main.contains(e) && e.closest('[dir="auto"], img, [role="img"]'));
+  const b = el ? el.closest('[dir="auto"], img, [role="img"]').getBoundingClientRect() : { left: x, right: x };
+  const m = main.getBoundingClientRect();
+  return (b.left + b.right) / 2 > m.left + m.width / 2;
+}
+ipcRenderer.on('reply-check', async () => {
+  ctxReply = ctxLookup ? await ctxLookup : null;
+  // Images may show no Reply button, so look for More on its own.
+  ctxMore = ctxPoint && isOwnAt(...ctxPoint) ? (replyButtonNow(...ctxPoint, MORE) || await replyButtonAt(...ctxPoint, MORE)) : null;
+  if (!ctxReply && ctxPoint) {
+    const els = document.elementsFromPoint(...ctxPoint).slice(0, 6).map((e) => `${e.tagName.toLowerCase()}${e.getAttribute('role') ? '[' + e.getAttribute('role') + ']' : ''}${e.getAttribute('aria-label') ? '"' + e.getAttribute('aria-label').slice(0, 20) + '"' : ''}`);
+    const vis = (sel) => [...document.querySelectorAll(sel)].filter((b) => b.getBoundingClientRect().height > 0).map((b) => Math.round(b.getBoundingClientRect().top));
+    const main = document.querySelector('[role="main"]');
+    const y = ctxPoint[1];
+    const near = main ? [...main.querySelectorAll('[aria-label]')].filter((b) => { const r = b.getBoundingClientRect(); return r.height > 0 && r.height < 60 && Math.abs(r.top + r.height / 2 - y) < 250; }).map((b) => `"${b.getAttribute('aria-label').slice(0, 30)}"@${Math.round(b.getBoundingClientRect().top)}`) : [];
+    ipcRenderer.send('debug', `right-click miss at ${ctxPoint.map(Math.round)} under=${els.join(' > ')} near=${near.join(', ')}`);
+  }
+  ipcRenderer.send('debug', `right-click reply=${!!ctxReply} unsend=${!!ctxMore}`);
+  ipcRenderer.send('reply-check-result', { reply: !!ctxReply, unsend: !!ctxMore, text: ctxPoint ? messageTextAt(...ctxPoint) : '' });
+});
+
+// The full text of the message bubble under a point. Messenger puts
+// message text in dir="auto" elements; the bubble padding sits just above.
+function messageTextAt(x, y) {
+  const main = document.querySelector('[role="main"]');
+  for (const el of document.elementsFromPoint(x, y)) {
+    if (!main || !main.contains(el) || el.closest('[contenteditable="true"]')) continue;
+    let t = el.closest('[dir="auto"]');
+    if (!t) {
+      const r = el.getBoundingClientRect();
+      if (r.height < 400) t = el.querySelector('[dir="auto"]');
+    }
+    const text = t && t.innerText.trim();
+    if (text) return text;
+  }
+  return '';
+}
+ipcRenderer.on('reply-do', () => { if (ctxReply) ctxReply.click(); ctxReply = null; });
+ipcRenderer.on('unsend-do', async () => {
+  const more = ctxMore; ctxMore = null;
+  if (!more) return;
+  more.click();
+  for (let i = 0; i < 20; i++) {
+    await new Promise((r) => setTimeout(r, 50));
+    const item = [...document.querySelectorAll('[role="menuitem"]')].find((m) => /^unsend$/i.test(m.innerText.trim()));
+    if (item) { item.click(); return; }
+  }
+  ipcRenderer.send('debug', 'unsend: no Unsend item in the menu');
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+});
+
+// Brief flash over the page, used by notify mode.
 ipcRenderer.on('flash', () => {
   const el = document.createElement('div');
   el.id = 'messagebae-flash';
@@ -192,6 +420,7 @@ ipcRenderer.on('flash', () => {
 let escCount = 0;
 let skipBackspace = 0;
 window.addEventListener('keydown', (e) => {
+  if (emojiOpen()) return; // the emoji list handles its own keys
   if (e.key === 'Backspace' && skipBackspace) {
     skipBackspace--;
     return;
@@ -411,6 +640,40 @@ function lockScroll() {
 setInterval(lockScroll, 500);
 window.addEventListener('DOMContentLoaded', lockScroll);
 
+// Some links (e.g. the quoted message in a reply) call scrollIntoView,
+// which can scroll the page's outer containers even with overflow hidden,
+// shifting the whole view up. On chat screens, undo that straight away.
+// The chat list and conversation scroll inside [role="main"] / the nav,
+// so only the containers around them are reset.
+function outerScrollers() {
+  const main = document.querySelector('[role="main"]');
+  const els = [document.documentElement, document.body];
+  for (let el = main && main.parentElement; el && el !== document.body; el = el.parentElement) els.push(el);
+  return els;
+}
+function resetView() {
+  for (const el of outerScrollers()) if (el.scrollTop || el.scrollLeft) el.scrollTop = el.scrollLeft = 0;
+}
+// Shifted if an outer container has scrolled, or the conversation no
+// longer reaches the bottom of the window.
+function viewShifted() {
+  if (!document.documentElement.classList.contains('messagebae-lock')) return false;
+  if (outerScrollers().some((el) => el.scrollTop || el.scrollLeft)) return true;
+  const main = document.querySelector('[role="main"]');
+  return !!main && main.getBoundingClientRect().bottom < window.innerHeight - 60;
+}
+setInterval(() => {
+  document.getElementById('messagebae-resetview')?.classList.toggle('shown', viewShifted());
+}, 500);
+window.addEventListener('scroll', (e) => {
+  if (!document.documentElement.classList.contains('messagebae-lock')) return;
+  const t = e.target === document ? document.documentElement : e.target;
+  if (outerScrollers().includes(t) && (t.scrollTop || t.scrollLeft)) {
+    ipcRenderer.send('debug', `view shifted on <${t.tagName.toLowerCase()}>, resetting`);
+    t.scrollTop = t.scrollLeft = 0;
+  }
+}, true);
+
 // Opening a chat puts the cursor in the message box, ready to type.
 let chatPath = location.pathname;
 function focusBox(tries) {
@@ -423,3 +686,134 @@ setInterval(() => {
   chatPath = location.pathname;
   if (/\/t\/[^/]+/.test(chatPath)) setTimeout(() => focusBox(20), 150);
 }, 150);
+
+// :emoji: shortcodes. Typing ":" plus 2+ letters shows a list of matches;
+// arrows move, Enter/Tab/click picks, Esc closes. A full ":fire:" swaps
+// straight away.
+let emojiList = null, emojiPop = null, emojiItems = [], emojiSel = 0, emojiQuery = null;
+const emojiOpen = () => !!(emojiPop && emojiPop.style.display === 'block');
+
+function emojiSearch(q, max = 8) {
+  const out = [];
+  for (const [e, k] of emojiList) {
+    let score = -1;
+    if (k[0] === q) score = 0;
+    else if (k.includes(q)) score = 1;
+    else if (k[0].startsWith(q)) score = 2;
+    else if (k.some((w) => w.startsWith(q))) score = 3;
+    else if (k[0].includes(q)) score = 4;
+    if (score >= 0) out.push([score, k[0].length, e, k[0]]);
+  }
+  out.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  return out.slice(0, max).map(([, , e, name]) => ({ e, name }));
+}
+
+// The ":query" right before the cursor, if any.
+function emojiContext() {
+  const sel = getSelection();
+  const node = sel.anchorNode;
+  if (!sel.isCollapsed || !node || node.nodeType !== 3) return null;
+  const before = node.textContent.slice(0, sel.anchorOffset);
+  const done = before.match(/(?:^|\s):([a-z0-9_+-]+):$/i);
+  if (done) return { node, end: sel.anchorOffset, len: done[1].length + 2, q: done[1].toLowerCase(), done: true };
+  const m = before.match(/(?:^|\s):([a-z0-9_+-]{2,})$/i);
+  return m ? { node, end: sel.anchorOffset, len: m[1].length + 1, q: m[1].toLowerCase() } : null;
+}
+
+function emojiInsert(e) {
+  const c = emojiQuery;
+  emojiClose();
+  if (!c || !c.node.isConnected) return;
+  const r = document.createRange();
+  r.setStart(c.node, c.end - c.len);
+  r.setEnd(c.node, c.end);
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r);
+  ipcRenderer.send('insert-text', e);
+}
+
+function emojiClose() {
+  if (emojiPop) emojiPop.style.display = 'none';
+  emojiQuery = null;
+}
+
+function emojiRender() {
+  emojiPop.replaceChildren(...emojiItems.map((it, i) => {
+    const row = document.createElement('div');
+    row.className = 'item' + (i === emojiSel ? ' sel' : '');
+    row.innerHTML = '<span class="e"></span><span class="n"></span>';
+    row.firstChild.textContent = it.e;
+    row.lastChild.textContent = ':' + it.name + ':';
+    row.addEventListener('mousedown', (ev) => { ev.preventDefault(); emojiInsert(it.e); });
+    return row;
+  }));
+}
+
+async function emojiUpdate() {
+  const c = emojiContext();
+  if (!c) return emojiClose();
+  if (!emojiList) emojiList = await ipcRenderer.invoke('emoji-list');
+  const items = emojiSearch(c.q);
+  if (c.done) {
+    emojiQuery = c;
+    const exact = items.find((it) => it.name === c.q) || (items[0] && emojiSearch(c.q, 1)[0]);
+    if (exact && emojiList.some(([e, k]) => e === exact.e && k.includes(c.q))) return emojiInsert(exact.e);
+    return emojiClose();
+  }
+  if (!items.length) return emojiClose();
+  emojiQuery = c;
+  emojiItems = items;
+  emojiSel = 0;
+  if (!emojiPop) {
+    emojiPop = document.createElement('div');
+    emojiPop.id = 'messagebae-emoji';
+    document.documentElement.appendChild(emojiPop);
+  }
+  emojiRender();
+  const r = getSelection().getRangeAt(0).getBoundingClientRect();
+  emojiPop.style.display = 'block';
+  emojiPop.style.left = Math.min(r.left, innerWidth - emojiPop.offsetWidth - 8) + 'px';
+  emojiPop.style.top = Math.max(8, r.top - emojiPop.offsetHeight - 8) + 'px';
+}
+
+document.addEventListener('input', (e) => {
+  if (e.target.closest && e.target.closest('[contenteditable="true"]')) emojiUpdate();
+}, true);
+document.addEventListener('focusout', () => setTimeout(() => {
+  if (!document.activeElement || !document.activeElement.closest('[contenteditable="true"]')) emojiClose();
+}, 0), true);
+window.addEventListener('keydown', (e) => {
+  if (!emojiOpen()) return;
+  const k = e.key;
+  if (k === 'ArrowDown' || k === 'ArrowUp') {
+    emojiSel = (emojiSel + (k === 'ArrowDown' ? 1 : -1) + emojiItems.length) % emojiItems.length;
+    emojiRender();
+  } else if (k === 'Enter' || k === 'Tab') {
+    emojiInsert(emojiItems[emojiSel].e);
+  } else if (k === 'Escape') {
+    emojiClose();
+  } else return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+}, true);
+
+// Click a message or the chat background: put the cursor in the message box.
+// Capture phase, as Messenger stops some clicks before they reach window.
+window.addEventListener('click', (e) => {
+  if (e.button !== 0 || holdFired || !reactTarget(e)) return;
+  const { clientX: x, clientY: y } = e;
+  const skip = (why) => ipcRenderer.send('debug', `background click at ${x},${y} on <${e.target.tagName.toLowerCase()}> skipped: ${why}`);
+  if (!window.getSelection()?.isCollapsed) return skip('text selected');
+  if (document.elementsFromPoint(x, y).some((el) => el.matches('img, video, svg, canvas, [role="img"], [role="link"]'))) return skip('media');
+  const box = document.querySelector('[role="main"] div[role="textbox"][contenteditable="true"]');
+  if (!box) return skip('no message box');
+  if (box.contains(e.target)) return;
+  ipcRenderer.send('debug', `background click at ${x},${y} on <${e.target.tagName.toLowerCase()}>, focusing box`);
+  setTimeout(() => {
+    box.focus();
+    const r = document.createRange();
+    r.selectNodeContents(box); r.collapse(false);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+  }, 0);
+}, true);
