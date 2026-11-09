@@ -150,8 +150,9 @@ html.messagebae-resizing * {
 
 /* No page scroll on Messenger screens (class toggled in preload.js). */
 html.messagebae-lock,
-html.messagebae-lock body {
-  overflow: hidden !important;
+html.messagebae-lock body,
+html.messagebae-lock .messagebae-clip {
+  overflow: clip !important;
 }
 
 /* :emoji: suggestion list (built in preload.js). */
@@ -207,4 +208,10 @@ html.messagebae-lock body {
   border-radius: 10px;
   background: rgba(8, 102, 255, 0.08);
   box-sizing: border-box;
+}
+
+/* Messenger's unsend dialog, hidden while our native sheet asks (preload.js).
+   Still clickable, so our clicks reach it. */
+.messagebae-hidden {
+  opacity: 0 !important;
 }

@@ -4,6 +4,9 @@
   "openInBackground": false,
   "openLinksInBrowser": false,
   "rememberWindowSize": false,
+  "notifications": "messenger",
+  "notificationSound": "default",
+  "silenceMessengerSound": false,
   "shortcuts": {
     "searchChats": "Cmd+K",
     "messageBox": "Cmd+L",

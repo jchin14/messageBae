@@ -15,10 +15,10 @@ read -r ok
 git push -q origin master
 
 # One commit with master's files, on top of the last public release.
-# Private files (CHANGES.md, CLAUDE.md) are left out of the public tree.
+# Private files (CHANGES.md, AI files, Dependabot) are left out of the public tree.
 IDX=$(mktemp)
 GIT_INDEX_FILE=$IDX git read-tree master
-GIT_INDEX_FILE=$IDX git rm -q --cached --ignore-unmatch CHANGES.md CLAUDE.md
+GIT_INDEX_FILE=$IDX git rm -q -r --cached --ignore-unmatch CHANGES.md CLAUDE.md CLAUDE.local.md AGENTS.md .claude .github/dependabot.yml
 TREE=$(GIT_INDEX_FILE=$IDX git write-tree)
 rm -f "$IDX"
 PARENT=$(git rev-parse -q --verify public/main || true)

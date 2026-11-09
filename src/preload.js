@@ -28,9 +28,21 @@ ipcRenderer.on('toggle-mode', (_e, mode) => setMode(mode, mode === 'mute' ? !mut
 
 // Let the page tell the main process a notification was clicked,
 // and check whether notifications are muted.
+// Notification settings from the main process: source (messenger,
+// messagebae or off), silent (a custom sound replaces the macOS one) and
+// silencePop (block Messenger's in-page sound).
+let notify = ipcRenderer.sendSync('get-notify-config') || {};
+ipcRenderer.on('notify-config', (_e, c) => { notify = c || {}; });
 contextBridge.exposeInMainWorld('messagebae', {
   notificationClicked: () => ipcRenderer.send('notification-click'),
   isMuted: () => muted,
+  notify: () => notify,
+  // messageBae mode: hand Facebook's notification to the main process.
+  forward: (id, title, body) => ipcRenderer.send('web-notification', { id, title: String(title || ''), body: String(body || '') }),
+  // Messenger mode: a notification was shown, play the chosen sound.
+  shown: () => ipcRenderer.send('play-notify-sound'),
+  onNativeClick: (cb) => ipcRenderer.on('native-notification-click', (_e, id) => cb(id)),
+  log: (m) => ipcRenderer.send('debug', String(m)),
 });
 
 // Ask the main process to show the file picker.
@@ -69,33 +81,73 @@ ipcRenderer.on('attach-files', (_e, files) => {
 
 // Wrap the page's Notification so clicks also bring the window forward.
 // Facebook's own click handler still runs and opens the chat.
+// Muted or Off: hand back a silent stand-in. messageBae mode: a stand-in
+// too, and the main process shows its own notification; a click on that
+// fires the stand-in's click so Facebook still opens the chat.
 webFrame.executeJavaScript(`(() => {
-  const N = window.Notification;
-  if (!N) return;
-  class Wrapped extends N {
-    constructor(title, opts) {
-      super(title, opts);
-      this.addEventListener('click', () => window.messagebae.notificationClicked());
-    }
-  }
-  // While muted, hand back a silent stand-in instead of showing anything.
-  window.Notification = new Proxy(Wrapped, {
-    construct(target, args) {
-      if (window.messagebae.isMuted()) {
-        const fake = new EventTarget();
-        fake.close = () => {};
-        return fake;
-      }
-      return Reflect.construct(target, args);
-    },
+  const mb = window.messagebae;
+  if (!mb) return;
+  const standIn = () => {
+    const fake = new EventTarget();
+    fake.close = () => {};
+    fake.onclick = null;
+    return fake;
+  };
+  const pending = new Map();
+  let nextId = 1;
+  mb.onNativeClick((id) => {
+    const f = pending.get(id);
+    if (!f) return;
+    const ev = new Event('click');
+    f.dispatchEvent(ev);
+    if (typeof f.onclick === 'function') f.onclick(ev);
   });
+  const N = window.Notification;
+  if (N) {
+    class Wrapped extends N {
+      constructor(title, opts) {
+        super(title, opts);
+        this.addEventListener('click', () => mb.notificationClicked());
+      }
+    }
+    window.Notification = new Proxy(Wrapped, {
+      construct(target, [title, opts]) {
+        const c = mb.notify();
+        if (mb.isMuted() || c.source === 'off') return standIn();
+        if (c.source === 'messagebae') {
+          const fake = standIn(), id = nextId++;
+          pending.set(id, fake);
+          if (pending.size > 50) pending.delete(pending.keys().next().value);
+          mb.forward(id, title, opts && opts.body);
+          return fake;
+        }
+        if (c.silent) { opts = { ...opts, silent: true }; mb.shown(); }
+        return Reflect.construct(target, [title, opts]);
+      },
+    });
+  }
   const SWR = window.ServiceWorkerRegistration;
   if (SWR) {
     const show = SWR.prototype.showNotification;
-    SWR.prototype.showNotification = function (...args) {
-      return window.messagebae.isMuted() ? Promise.resolve() : show.apply(this, args);
+    SWR.prototype.showNotification = function (title, opts) {
+      const c = mb.notify();
+      if (mb.isMuted() || c.source === 'off') return Promise.resolve();
+      if (c.source === 'messagebae') { mb.forward(0, title, opts && opts.body); return Promise.resolve(); }
+      if (c.silent) { opts = { ...opts, silent: true }; mb.shown(); }
+      return show.call(this, title, opts);
     };
   }
+  // Silence Messenger's pop: skip audio from Facebook's static files
+  // (its UI sounds). Voice messages come from other hosts and still play.
+  const play = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function (...a) {
+    const src = this.currentSrc || this.src || '';
+    if (this instanceof HTMLAudioElement && mb.notify().silencePop && /^https:\\/\\/static\\.[^/]*fbcdn\\.net\\//.test(src)) {
+      mb.log('silenced Messenger sound ' + src.slice(0, 100));
+      return Promise.resolve();
+    }
+    return play.apply(this, a);
+  };
 })();`);
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -166,7 +218,11 @@ function resetViewButton() {
   btn.id = 'messagebae-resetview';
   btn.textContent = '⤒ Reset view';
   btn.title = 'Put the view back if it has shifted. Shift-click to reload Messenger';
-  btn.addEventListener('click', (e) => { if (e.shiftKey) location.reload(); else { resetView(); btn.classList.remove('shown'); } });
+  btn.addEventListener('click', (e) => {
+    if (btn.classList.contains('back')) location.assign('https://www.facebook.com/messages');
+    else if (e.shiftKey) location.reload();
+    else { resetView(); btn.classList.remove('shown'); }
+  });
   return btn;
 }
 
@@ -348,7 +404,7 @@ window.addEventListener('contextmenu', (e) => {
   });
 }, true);
 // Unsend goes through the message's More button, then Messenger's own
-// Unsend menu item and confirm dialog. Only your messages (right side).
+// Unsend menu item and confirm dialog (swapped for a native sheet below). Only your messages (right side).
 const MORE = '[aria-label="More" i], [aria-label^="More " i]';
 let ctxMore = null;
 function isOwnAt(x, y) {
@@ -404,6 +460,97 @@ ipcRenderer.on('unsend-do', async () => {
   ipcRenderer.send('debug', 'unsend: no Unsend item in the menu');
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 });
+
+// Unsend confirm: Messenger's big "who do you want to unsend this for?"
+// dialog is hidden and a native macOS sheet asks instead. Works for both
+// right-click Unsend and Messenger's own ... menu. If the dialog's parts
+// can't be found, or our clicks don't close it, Messenger's dialog shows.
+const unsendSeen = new WeakSet();
+let unsendQueued = false;
+new MutationObserver(() => {
+  if (unsendQueued) return;
+  unsendQueued = true;
+  // Checked once per frame, before paint, so the dialog never flashes up.
+  requestAnimationFrame(() => { unsendQueued = false; findUnsendDialog(); });
+}).observe(document, { childList: true, subtree: true });
+
+const labelOf = (el) => (el.innerText || el.getAttribute('aria-label') || '').trim();
+// The option text next to a radio: the nearest ancestor with any text.
+function radioText(r) {
+  for (let el = r, i = 0; el && i < 6; el = el.parentElement, i++) {
+    const t = labelOf(el);
+    if (t) return t;
+  }
+  return '';
+}
+function findUnsendDialog() {
+  for (const d of document.querySelectorAll('[role="dialog"]')) {
+    if (unsendSeen.has(d) || !/unsend/i.test(d.innerText || '')) continue;
+    const radios = [...d.querySelectorAll('[role="radio"], input[type="radio"]')];
+    if (!radios.length) continue;
+    unsendSeen.add(d);
+    handleUnsendDialog(d, radios);
+  }
+}
+// The dialog's outer layer (with its dark backdrop), below <body>.
+function dialogLayer(d) {
+  let el = d;
+  while (el.parentElement && el.parentElement !== document.body && !el.parentElement.querySelector('[role="main"]')) el = el.parentElement;
+  return el;
+}
+// A real click in the middle of el. If something else is on top there (or
+// el has no size, like a hidden radio input), use a scripted click instead,
+// so a miss never lands on the backdrop and closes the dialog.
+function realClick(el, name) {
+  const r = el.getBoundingClientRect();
+  const x = r.left + r.width / 2, y = r.top + r.height / 2;
+  const hit = r.width && r.height && document.elementFromPoint(x, y);
+  const ok = hit && (el.contains(hit) || hit.contains(el));
+  ipcRenderer.send('debug', `unsend dialog: ${name} at ${Math.round(x)},${Math.round(y)} ${ok ? 'real click' : 'scripted click, hit ' + (hit ? hit.tagName + '"' + labelOf(hit).slice(0, 20) + '"' : 'nothing')}`);
+  if (!ok) { el.click(); return Promise.resolve(); }
+  return ipcRenderer.invoke('click-at', x, y);
+}
+// The clickable row around a radio (the radio input itself can be tiny or hidden).
+function radioRow(r) {
+  for (let el = r, i = 0; el && i < 6; el = el.parentElement, i++) {
+    if (labelOf(el) && el.getBoundingClientRect().height > 0) return el;
+  }
+  return r;
+}
+async function handleUnsendDialog(d, radios) {
+  const everyone = radios.find((r) => /everyone/i.test(radioText(r)));
+  const you = radios.find((r) => /for you/i.test(radioText(r)));
+  const buttons = [...d.querySelectorAll('[role="button"], button')];
+  const confirm = buttons.find((b) => /^(remove|unsend)$/i.test(labelOf(b)));
+  const cancel = buttons.find((b) => /^(cancel|close)$/i.test(labelOf(b)));
+  if (!confirm || (!everyone && !you)) {
+    return ipcRenderer.send('debug', `unsend dialog: parts missing (everyone=${!!everyone} you=${!!you} confirm=${!!confirm}), showing Messenger's`);
+  }
+  const layer = dialogLayer(d);
+  layer.classList.add('messagebae-hidden');
+  const choice = await ipcRenderer.invoke('unsend-confirm', { everyone: !!everyone, you: !!you });
+  ipcRenderer.send('debug', `unsend dialog: chose ${choice || 'cancel'}`);
+  if (!choice) {
+    if (cancel) await realClick(cancel, 'cancel');
+    else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  } else {
+    const radio = choice === 'everyone' ? everyone : you;
+    await realClick(radioRow(radio), choice);
+    await new Promise((r) => setTimeout(r, 150));
+    const checked = radio.getAttribute('aria-checked') === 'true' || radio.checked;
+    ipcRenderer.send('debug', `unsend dialog: ${choice} picked=${checked}`);
+    if (!checked) await realClick(radio, choice + ' radio');
+    await new Promise((r) => setTimeout(r, 150));
+    await realClick(confirm, 'confirm');
+  }
+  ipcRenderer.send('debug', `unsend dialog: ${d.isConnected ? 'open' : 'closed'} after clicks`);
+  // Still open? Show Messenger's dialog so it can be finished by hand.
+  setTimeout(() => {
+    if (!d.isConnected) return;
+    ipcRenderer.send('debug', 'unsend dialog: still open, showing it');
+    layer.classList.remove('messagebae-hidden');
+  }, 1500);
+}
 
 // Brief flash over the page, used by notify mode.
 ipcRenderer.on('flash', () => {
@@ -633,9 +780,15 @@ window.addEventListener('resize', layoutPanels);
 
 // No page scroll on the Messenger screens (the chat list and conversation
 // scroll on their own). Other pages, like a profile, can still scroll.
+// The containers around the conversation are set to overflow: clip, which
+// can't scroll at all, so Messenger (focus, dialogs, quoted replies) can't
+// shift the view.
 function lockScroll() {
   const onChats = /^\/(messages|t)(\/|$)/.test(location.pathname);
   document.documentElement.classList.toggle('messagebae-lock', onChats);
+  const outer = onChats ? new Set(outerScrollers().slice(2)) : new Set();
+  document.querySelectorAll('.messagebae-clip').forEach((el) => { if (!outer.has(el)) el.classList.remove('messagebae-clip'); });
+  outer.forEach((el) => el.classList.add('messagebae-clip'));
 }
 setInterval(lockScroll, 500);
 window.addEventListener('DOMContentLoaded', lockScroll);
@@ -662,8 +815,26 @@ function viewShifted() {
   const main = document.querySelector('[role="main"]');
   return !!main && main.getBoundingClientRect().bottom < window.innerHeight - 60;
 }
+// Off the chat screens (e.g. a profile opened from a chat), the button
+// becomes "Back to Messenger". Only once chats have loaded this session,
+// so it stays hidden on the login pages.
+function offChats() {
+  const onChats = /^\/(messages|t)(\/|$)/.test(location.pathname);
+  try {
+    if (onChats) sessionStorage.setItem('messagebae-chats', '1');
+    return !onChats && sessionStorage.getItem('messagebae-chats') === '1';
+  } catch { return false; }
+}
 setInterval(() => {
-  document.getElementById('messagebae-resetview')?.classList.toggle('shown', viewShifted());
+  const btn = document.getElementById('messagebae-resetview');
+  if (!btn) return;
+  const back = offChats();
+  if (back !== btn.classList.contains('back')) {
+    btn.classList.toggle('back', back);
+    btn.textContent = back ? '← Back to Messenger' : '⤒ Reset view';
+    btn.title = back ? 'Go back to your chats' : 'Put the view back if it has shifted. Shift-click to reload Messenger';
+  }
+  btn.classList.toggle('shown', back || viewShifted());
 }, 500);
 window.addEventListener('scroll', (e) => {
   if (!document.documentElement.classList.contains('messagebae-lock')) return;

@@ -1,6 +1,6 @@
-const { app, BrowserWindow, Menu, Tray, shell, session, ipcMain, screen, systemPreferences, dialog } = require('electron');
+const { app, BrowserWindow, Menu, Tray, Notification, shell, session, ipcMain, screen, systemPreferences, dialog } = require('electron');
 const fs = require('fs');
-const { execFileSync } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 const path = require('path');
 
 const HOME = 'https://www.facebook.com/messages';
@@ -39,6 +39,9 @@ function loadSettings() {
     openLinksInBrowser: user.openLinksInBrowser ?? DEFAULTS.openLinksInBrowser,
     windowBounds: user.windowBounds || null,
     rememberWindowSize: user.rememberWindowSize ?? DEFAULTS.rememberWindowSize,
+    notifications: ['messenger', 'messagebae', 'off'].includes(user.notifications) ? user.notifications : DEFAULTS.notifications,
+    notificationSound: user.notificationSound || DEFAULTS.notificationSound,
+    silenceMessengerSound: user.silenceMessengerSound ?? DEFAULTS.silenceMessengerSound,
     lastWindowBounds: user.lastWindowBounds || null,
     shortcuts: { ...DEFAULTS.shortcuts, ...user.shortcuts },
   };
@@ -248,7 +251,9 @@ function createWindow() {
   win.on('page-title-updated', (_e, title) => {
     const m = title.match(/^\((\d+)\)/);
     const n = m ? Number(m[1]) : 0;
+    if (!m && /messaged you/i.test(title)) lastFlash = { title: title.replace(/\s*\|.*$/, ''), at: Date.now() };
     if (n > unread) onNewMessage();
+    checkOwnNotification(n);
     unread = n;
     updateBadge();
   });
@@ -419,7 +424,7 @@ function buildMenu() {
         { label: 'Check for Updates…', click: () => checkForUpdates(true) },
         { type: 'separator' },
         { label: 'Edit Settings…', accelerator: 'Cmd+,', click: () => shell.openPath(settingsPath()) },
-        { label: 'Reload Settings', click: () => { settings = loadSettings(); buildMenu(); updateBadge(); } },
+        { label: 'Reload Settings', click: () => { settings = loadSettings(); buildMenu(); updateBadge(); sendNotifyConfig(); } },
         { type: 'separator' },
         { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
         { type: 'separator' },
@@ -441,6 +446,8 @@ function buildMenu() {
         { type: 'separator' },
         { label: 'Notify Mode (!)', accelerator: k.notifyMode, click: () => win.webContents.send('toggle-mode', 'alert') },
         { label: 'Mute', accelerator: k.mute, click: () => win.webContents.send('toggle-mode', 'mute') },
+        { type: 'separator' },
+        notificationMenu(),
       ],
     },
     {
@@ -514,6 +521,19 @@ async function checkForUpdates(manual = false) {
   if (response === 0) shell.openExternal(RELEASES);
 }
 
+// Only one copy runs. Opening it again brings the open window forward and
+// tells the user it was already running.
+if (!app.requestSingleInstanceLock()) app.exit(0);
+app.on('second-instance', () => {
+  if (!win) return;
+  showWindow();
+  dialog.showMessageBox(win, {
+    message: 'messageBae is already open',
+    detail: 'This is the window that was already running.',
+    buttons: ['OK'],
+  });
+});
+
 app.whenReady().then(() => {
   setTimeout(() => checkForUpdates(), 10000);
   setInterval(() => checkForUpdates(), 12 * 60 * 60 * 1000);
@@ -556,6 +576,23 @@ ipcMain.handle('click-at', (e, x, y) => {
   e.sender.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...at });
   e.sender.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...at });
 });
+// Native sheet in place of Messenger's unsend dialog (see preload).
+ipcMain.handle('unsend-confirm', async (e, { everyone, you }) => {
+  const opts = [];
+  if (everyone) opts.push(['Unsend for Everyone', 'everyone']);
+  if (you) opts.push(['Remove for You', 'you']);
+  opts.push(['Cancel', null]);
+  const { response } = await dialog.showMessageBox(BrowserWindow.fromWebContents(e.sender), {
+    message: 'Unsend this message?',
+    detail: everyone
+      ? 'Unsend for Everyone removes it from the chat. Remove for You only hides it for you.'
+      : 'It will be removed for you. Others in the chat can still see it.',
+    buttons: opts.map((o) => o[0]),
+    defaultId: 0,
+    cancelId: opts.length - 1,
+  });
+  return opts[response][1];
+});
 // Debug logs print when launched from a terminal (or with MESSAGEBAE_DEBUG=1).
 const DEBUG = process.stdout.isTTY || !!process.env.MESSAGEBAE_DEBUG;
 ipcMain.on('debug', (_e, msg) => { if (DEBUG) console.log('[messageBae]', msg); });
@@ -564,6 +601,120 @@ let alertMode = false;
 ipcMain.on('set-muted', (e, m) => { muted = !!m; e.sender.setAudioMuted(muted); });
 ipcMain.on('clear-badge', clearBadge);
 ipcMain.on('set-alert', (_e, on) => { alertMode = !!on; });
+
+// Notifications: who shows them (Messenger's web ones, messageBae's own or
+// none) and which sound plays. See the Notification wrapper in preload.
+const SYSTEM_SOUNDS = ['Basso', 'Blow', 'Bottle', 'Frog', 'Funk', 'Glass', 'Hero', 'Morse', 'Ping', 'Pop', 'Purr', 'Sosumi', 'Submarine', 'Tink'];
+const soundFile = (s) => (!s || s === 'default' || s === 'none' ? null
+  : SYSTEM_SOUNDS.includes(s) ? `/System/Library/Sounds/${s}.aiff` : s);
+function playSound(s = settings.notificationSound) {
+  const file = soundFile(s);
+  if (file && fs.existsSync(file)) execFile('afplay', [file], () => {});
+}
+const notifyConfig = () => ({
+  source: settings.notifications,
+  silent: settings.notificationSound !== 'default',
+  silencePop: settings.silenceMessengerSound,
+});
+function sendNotifyConfig() { if (win) win.webContents.send('notify-config', notifyConfig()); }
+function setNotifySetting(key, value) {
+  settings[key] = value;
+  saveSetting(key, value);
+  sendNotifyConfig();
+  buildMenu();
+}
+ipcMain.on('get-notify-config', (e) => { e.returnValue = notifyConfig(); });
+ipcMain.on('play-notify-sound', () => { if (!muted) playSound(); });
+
+async function chooseSoundFile() {
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: 'Choose a Notification Sound',
+    properties: ['openFile'],
+    filters: [{ name: 'Sounds', extensions: ['aiff', 'aif', 'wav', 'mp3', 'm4a', 'caf'] }],
+  });
+  if (canceled || !filePaths[0]) return;
+  setNotifySetting('notificationSound', filePaths[0]);
+  playSound();
+}
+
+function notificationMenu() {
+  const s = settings.notificationSound;
+  const custom = soundFile(s) && !SYSTEM_SOUNDS.includes(s) ? s : null;
+  const source = (label, value) => ({
+    label, type: 'radio', checked: settings.notifications === value, click: () => setNotifySetting('notifications', value),
+  });
+  // Picking a sound plays it as a preview.
+  const sound = (label, value) => ({
+    label, type: 'radio', checked: s === value, click: () => { setNotifySetting('notificationSound', value); playSound(value); },
+  });
+  return {
+    label: 'Notifications',
+    submenu: [
+      source("Messenger's Notifications", 'messenger'),
+      source('messageBae Notifications', 'messagebae'),
+      source('Off', 'off'),
+      { type: 'separator' },
+      {
+        label: 'Sound',
+        submenu: [
+          sound('Default', 'default'),
+          sound('None', 'none'),
+          { type: 'separator' },
+          ...SYSTEM_SOUNDS.map((n) => sound(n, n)),
+          { type: 'separator' },
+          ...(custom ? [sound(path.basename(custom), custom)] : []),
+          { label: 'Choose File…', click: chooseSoundFile },
+        ],
+      },
+      {
+        label: "Silence Messenger's Pop Sound", type: 'checkbox', checked: settings.silenceMessengerSound,
+        click: (item) => setNotifySetting('silenceMessengerSound', item.checked),
+      },
+    ],
+  };
+}
+
+// messageBae notifications. Facebook's web notification is used when it
+// sends one (it has the name and message). If it doesn't, a rise in the
+// unread count shows a plain one after a short wait.
+const shownNotices = [];
+let lastFlash = { title: '', at: 0 };
+let fallbackTimer = null, lastFallback = 0, lastWeb = 0;
+let notifiedPeak = 0, peakTimer = null;
+function showOwnNotification(title, body, id) {
+  if (muted || settings.notifications !== 'messagebae' || !Notification.isSupported()) return;
+  const n = new Notification({ title: title || 'messageBae', body: body || '', silent: settings.notificationSound !== 'default' });
+  n.on('click', () => { showWindow(); if (id && win) win.webContents.send('native-notification-click', id); });
+  n.show();
+  playSound();
+  // Keep a reference so the click handler isn't garbage collected.
+  shownNotices.push(n);
+  if (shownNotices.length > 20) shownNotices.shift();
+}
+ipcMain.on('web-notification', (_e, n) => {
+  clearTimeout(fallbackTimer);
+  fallbackTimer = null;
+  lastWeb = Date.now();
+  if (lastWeb - lastFallback < 4000) return;
+  showOwnNotification(n.title, n.body, n.id);
+});
+// The count dips during reloads, so only count it as new once it beats the
+// highest seen; the high mark drops after a lower count holds for 10s.
+function checkOwnNotification(n) {
+  if (n >= notifiedPeak) { clearTimeout(peakTimer); peakTimer = null; }
+  else if (!peakTimer) peakTimer = setTimeout(() => { peakTimer = null; notifiedPeak = unread; }, 10000);
+  if (n <= notifiedPeak) return;
+  notifiedPeak = n;
+  if (settings.notifications !== 'messagebae' || muted || !badgeSettled || (win && win.isFocused())) return;
+  // Facebook's own notification already came in for this message.
+  if (Date.now() - lastWeb < 4000) return;
+  clearTimeout(fallbackTimer);
+  fallbackTimer = setTimeout(() => {
+    fallbackTimer = null;
+    lastFallback = Date.now();
+    showOwnNotification('messageBae', Date.now() - lastFlash.at < 5000 ? lastFlash.title : 'New message');
+  }, 2000);
+}
 
 // Title bar drag: follow the cursor until the mouse is released.
 let dragTimer = null;

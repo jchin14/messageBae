@@ -64,11 +64,18 @@ Keep your hands on the keyboard. The shortcuts work like the ones you know from 
 - **↻** reloads Messenger.
 - Only one of ! and 🔔 can be on at a time.
 
+## Notifications (View > Notifications)
+- **Source:** Messenger's web notifications, messageBae's own, or Off.
+- **Sound:** Default, None, any macOS sound, or Choose File… for your own. Picking one plays a preview.
+- **Silence Messenger's Pop Sound** stops the in-page pop, so only your sound plays.
+
 ## Reset view
 - The window stays put if Messenger tries to scroll it (like clicking a quoted reply).
 - If it ever shifts, a **Reset view** button shows bottom right. Click to reset, Shift-click to reload.
+- If you open a profile or other Facebook page from a chat, a **Back to Messenger** button shows bottom right.
 
 ## Known limitations
+- Voice and video calls don't work yet.
 - Clicking a quoted message in a reply makes the screen jump briefly. Messenger scrolls the window up and messageBae moves it straight back. This can't be avoided.
 
 ## Window and panels
@@ -81,7 +88,7 @@ Keep your hands on the keyboard. The shortcuts work like the ones you know from 
 
 ## Right-click
 - **Reply** on any message or image.
-- **Unsend** on your own messages and images (Messenger asks to confirm).
+- **Unsend** on your own messages and images, with a small Mac popup to confirm in place of Messenger's big one (also from Messenger's own ⋯ menu).
 - **Copy Message** copies the whole message. **Copy** copies selected text.
 - On images: copy or save.
 
@@ -109,6 +116,10 @@ Change shortcuts with **Edit Settings…** (Cmd+,), then **Reload Settings**. Th
 
 ## Issues
 Found a bug or something not working? [Open an issue](https://github.com/jchin14/messageBae/issues) on GitHub.
+
+## Support
+
+If you find this useful and can afford to, support is appreciated: [buy me a coffee](https://buymeacoffee.com/jchin14). Just getting started, the domain, hosting, Cloudflare Workers and Apple and Google developer accounts add up to a few hundred dollars. Your support helps me keep making tools that are helpful for everyone.
 
 ## License
 [PolyForm Noncommercial 1.0.0](LICENSE.md). Free for personal use. For commercial use, email [licensing@jchin.au](mailto:licensing@jchin.au) or [open an issue](https://github.com/jchin14/messageBae/issues).
