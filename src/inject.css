@@ -111,6 +111,10 @@ html.messagebae:has([role="dialog"]) body {
 /* Conversation card corners (element found in preload.js). */
 html.messagebae .messagebae-card {
   border-radius: 18px !important;
+  /* Facebook caps it at a 100vh-based height that ignores our title bar,
+     so in some chats it clips the bottom of the message box. Fill the
+     container instead (evenBottom in preload.js sets the gap). */
+  max-height: none !important;
 }
 html.messagebae .messagebae-nopad {
   padding-bottom: 0 !important;

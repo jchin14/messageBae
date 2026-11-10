@@ -42,6 +42,7 @@ function loadSettings() {
     notifications: ['messenger', 'messagebae', 'off'].includes(user.notifications) ? user.notifications : DEFAULTS.notifications,
     notificationSound: user.notificationSound || DEFAULTS.notificationSound,
     silenceMessengerSound: user.silenceMessengerSound ?? DEFAULTS.silenceMessengerSound,
+    autoUpdate: user.autoUpdate ?? DEFAULTS.autoUpdate,
     lastWindowBounds: user.lastWindowBounds || null,
     shortcuts: { ...DEFAULTS.shortcuts, ...user.shortcuts },
   };
@@ -272,6 +273,15 @@ function createWindow() {
     }
   });
 
+  // Trackpad gesture phases for swipe-to-reply (preload): when the fingers
+  // land and lift. The page's wheel events don't carry them.
+  win.webContents.on('input-event', (_e, input) => {
+    if (input.type === 'gestureScrollBegin' || input.type === 'gestureScrollEnd') {
+      ipcMain.emit('debug', null, `gesture ${input.type}`);
+      win.webContents.send('gesture', input.type);
+    }
+  });
+
   // Right-click a message or image: reply, copy, save or unsend.
   win.webContents.on('context-menu', async (_e, p) => {
     const { reply, unsend, text } = await replyCheck();
@@ -421,7 +431,13 @@ function buildMenu() {
       role: 'appMenu',
       submenu: [
         { role: 'about' },
-        { label: 'Check for Updates…', click: () => checkForUpdates(true) },
+        // The App Store build updates through the App Store.
+        ...(process.mas ? [] : [
+          { label: 'Check for Updates…', click: () => checkForUpdates(true) },
+          settings.autoUpdate
+            ? { label: 'Turn Off Auto Update', click: () => setAutoUpdate(false) }
+            : { label: 'Turn On Auto Update…', click: () => askAutoUpdate() },
+        ]),
         { type: 'separator' },
         { label: 'Edit Settings…', accelerator: 'Cmd+,', click: () => shell.openPath(settingsPath()) },
         { label: 'Reload Settings', click: () => { settings = loadSettings(); buildMenu(); updateBadge(); sendNotifyConfig(); } },
@@ -477,7 +493,7 @@ function buildMenu() {
     {
       role: 'help',
       submenu: [
-        { label: 'Buy Me a Coffee…', click: () => shell.openExternal('https://buymeacoffee.com/jchin14') },
+        { label: 'Buy Me a Coffee…', click: () => shell.openExternal(COFFEE) },
       ],
     },
   ]));
@@ -485,7 +501,56 @@ function buildMenu() {
 
 // Update check: compare with the latest GitHub release. Runs on launch and
 // every 12 hours; Check for Updates… in the app menu runs it on demand.
+// Supporters can turn on auto update, which downloads and installs the
+// release itself (electron-updater, from the zip in the GitHub release).
+// It's on trust: donate any amount, then turn it on. There's no check.
 const RELEASES = 'https://github.com/jchin14/messageBae/releases/latest';
+const COFFEE = 'https://buymeacoffee.com/jchin14';
+const { autoUpdater } = require('electron-updater');
+autoUpdater.autoDownload = false;
+autoUpdater.logger = { info: (m) => ipcMain.emit('debug', null, `updater: ${m}`), warn: (m) => ipcMain.emit('debug', null, `updater: ${m}`), error: (m) => ipcMain.emit('debug', null, `updater: ${m}`), debug: () => {} };
+function setAutoUpdate(on) {
+  settings.autoUpdate = on;
+  saveSetting('autoUpdate', on);
+  buildMenu();
+  if (on) checkForUpdates();
+}
+async function askAutoUpdate() {
+  const { response } = await dialog.showMessageBox(win, {
+    message: 'Auto update is for supporters',
+    detail: 'Donate any amount, then turn it on. messageBae will download and install new versions itself.\n\nIt works on trust: there is no check. Thanks for supporting it.',
+    buttons: ['Donate…', "I've Donated, Turn It On", 'Cancel'],
+    defaultId: 0,
+    cancelId: 2,
+  });
+  if (response === 0) shell.openExternal(COFFEE);
+  if (response === 1) setAutoUpdate(true);
+}
+// Auto update: download, then offer to restart. Errors fall back to the
+// manual flow below, so a broken feed never hides an update.
+let updateDownloaded = null;
+autoUpdater.on('update-downloaded', async (info) => {
+  updateDownloaded = info.version;
+  const { response } = await dialog.showMessageBox(win, {
+    message: `messageBae ${info.version} is ready`,
+    detail: 'Restart now to finish updating. Your settings stay.',
+    buttons: ['Restart Now', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response === 0) autoUpdater.quitAndInstall();
+});
+async function autoUpdate(manual) {
+  const r = await autoUpdater.checkForUpdates();
+  const latest = r && r.updateInfo && r.updateInfo.version;
+  if (!latest || !newer(latest, app.getVersion())) {
+    if (manual) dialog.showMessageBox(win, { message: "You're up to date", detail: `messageBae ${app.getVersion()} is the latest version.` });
+    return;
+  }
+  if (updateDownloaded === latest) return;
+  if (manual) dialog.showMessageBox(win, { message: `Downloading messageBae ${latest}`, detail: "You'll be asked to restart when it's ready." });
+  await autoUpdater.downloadUpdate();
+}
 const newer = (a, b) => {
   const x = a.split('.').map(Number), y = b.split('.').map(Number);
   for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
@@ -493,6 +558,9 @@ const newer = (a, b) => {
 };
 let updateShown = null;
 async function checkForUpdates(manual = false) {
+  if (settings.autoUpdate && app.isPackaged) {
+    try { return await autoUpdate(manual); } catch (err) { ipcMain.emit('debug', null, `auto update failed: ${err.message}`); }
+  }
   let latest;
   try {
     const r = await fetch('https://api.github.com/repos/jchin14/messageBae/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
@@ -513,12 +581,13 @@ async function checkForUpdates(manual = false) {
   updateShown = latest;
   const { response } = await dialog.showMessageBox(win, {
     message: `messageBae ${latest} is available`,
-    detail: `You have ${current}. Download the new .dmg, quit messageBae, then drag it into Applications and choose Replace. Your settings stay.`,
-    buttons: ['Download', 'Later'],
+    detail: `You have ${current}. Download the new .dmg, quit messageBae, then drag it into Applications and choose Replace. Your settings stay.\n\nSupporters can turn on auto update and skip this.`,
+    buttons: ['Download', 'Auto Update…', 'Later'],
     defaultId: 0,
-    cancelId: 1,
+    cancelId: 2,
   });
   if (response === 0) shell.openExternal(RELEASES);
+  if (response === 1) askAutoUpdate();
 }
 
 // Only one copy runs. Opening it again brings the open window forward and
@@ -535,8 +604,10 @@ app.on('second-instance', () => {
 });
 
 app.whenReady().then(() => {
-  setTimeout(() => checkForUpdates(), 10000);
-  setInterval(() => checkForUpdates(), 12 * 60 * 60 * 1000);
+  if (!process.mas) {
+    setTimeout(() => checkForUpdates(), 10000);
+    setInterval(() => checkForUpdates(), 12 * 60 * 60 * 1000);
+  }
   settings = loadSettings();
   buildMenu();
   createWindow();

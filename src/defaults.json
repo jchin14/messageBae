@@ -7,6 +7,7 @@
   "notifications": "messenger",
   "notificationSound": "default",
   "silenceMessengerSound": false,
+  "autoUpdate": false,
   "shortcuts": {
     "searchChats": "Cmd+K",
     "messageBox": "Cmd+L",

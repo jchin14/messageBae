@@ -1,12 +1,13 @@
 {
   "name": "messagebae",
-  "version": "1.26.2",
+  "version": "1.26.4",
   "private": true,
   "description": "A small macOS app for Facebook Messenger chats, with keyboard shortcuts, mute and a menu bar icon. Unofficial.",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "node scripts/bump.js && APPLE_KEYCHAIN_PROFILE=messagebae electron-builder --mac && sh scripts/staple.sh",
+    "dist": "node scripts/bump.js && APPLE_KEYCHAIN_PROFILE=messagebae electron-builder --mac --publish never && sh scripts/staple.sh",
+    "dist:mas": "electron-builder --mac mas",
     "icons": "electron scripts/make-icons.js",
     "release": "sh scripts/release.sh",
     "bump": "node scripts/bump.js",
@@ -18,7 +19,10 @@
     "productName": "messageBae",
     "mac": {
       "category": "public.app-category.social-networking",
-      "target": "dmg",
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "build/icon.icns",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
@@ -30,10 +34,23 @@
         "NSCameraUsageDescription": "Messenger uses the camera for video calls."
       }
     },
+    "mas": {
+      "type": "distribution",
+      "hardenedRuntime": false,
+      "entitlements": "build/entitlements.mas.plist",
+      "entitlementsInherit": "build/entitlements.mas.inherit.plist",
+      "entitlementsLoginHelper": "build/entitlements.mas.loginhelper.plist",
+      "provisioningProfile": "build/embedded.provisionprofile"
+    },
     "files": [
       "src/**/*",
       "assets/**/*"
-    ]
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "jchin14",
+      "repo": "messageBae"
+    }
   },
   "devDependencies": {
     "electron": "^45.2.2",
@@ -42,6 +59,10 @@
   "license": "PolyForm-Noncommercial-1.0.0",
   "author": "Jonathan Chin <messageBae@jchin.au>",
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "emojilib": "^3.0.12"
+  },
+  "overrides": {
+    "minimatch@>=7.0.0 <11.0.1": "^11.0.1"
   }
 }

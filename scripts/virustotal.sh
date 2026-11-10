@@ -8,13 +8,23 @@ F=${1:-$(ls -t dist/*.dmg | head -1)}
 VT_API_KEY=${VT_API_KEY:-$(security find-generic-password -s virustotal -w 2>/dev/null || true)}
 [ -n "$VT_API_KEY" ] || { echo "No VirusTotal key (VT_API_KEY or keychain item virustotal)."; exit 1; }
 SHA=$(shasum -a 256 "$F" | cut -d' ' -f1)
-# Files over 32 MB need a one-off upload URL.
-URL=$(curl -sf -H "x-apikey: $VT_API_KEY" https://www.virustotal.com/api/v3/files/upload_url | jq -r .data)
-curl -sf -H "x-apikey: $VT_API_KEY" -F "file=@$F" "$URL" >/dev/null
-# Wait for the scan to finish (up to ~5 min), then print the result.
-for i in $(seq 20); do
-  sleep 15
-  JSON=$(curl -sf -H "x-apikey: $VT_API_KEY" "https://www.virustotal.com/api/v3/files/$SHA" || true)
+report() { curl -sf -H "x-apikey: $VT_API_KEY" "https://www.virustotal.com/api/v3/files/$SHA" || true; }
+scanned() { echo "$1" | jq -e '.data.attributes.last_analysis_stats | (.malicious + .suspicious + .undetected + .harmless) > 0' >/dev/null 2>&1; }
+# Already scanned (e.g. a second run on the same file)? Use that report.
+JSON=$(report)
+if ! scanned "$JSON"; then
+  # Files over 32 MB need a one-off upload URL. Retry, since the free API
+  # allows only 4 requests a minute.
+  for i in 1 2 3; do
+    URL=$(curl -sf -H "x-apikey: $VT_API_KEY" https://www.virustotal.com/api/v3/files/upload_url | jq -r .data) &&
+      curl -sf -H "x-apikey: $VT_API_KEY" -F "file=@$F" "$URL" >/dev/null && UP=1 && break
+    echo "Upload failed, retrying in 60s..." >&2; sleep 60
+  done
+  [ -n "$UP" ] || { echo "Upload to VirusTotal failed." >&2; exit 1; }
+fi
+# Wait for the scan to finish (up to ~15 min), then print the result.
+for i in $(seq 30); do
+  scanned "$JSON" || { sleep 30; JSON=$(report); }
   STATS=$(echo "$JSON" | jq -c .data.attributes.last_analysis_stats 2>/dev/null || true)
   BAD=$(echo "$STATS" | jq '(.malicious // 0) + (.suspicious // 0)' 2>/dev/null || true)
   TOTAL=$(echo "$STATS" | jq '(.malicious // 0) + (.suspicious // 0) + (.undetected // 0) + (.harmless // 0)' 2>/dev/null || true)

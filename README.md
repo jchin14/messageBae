@@ -10,7 +10,12 @@ A small macOS app for Facebook Messenger. It opens facebook.com/messages in its 
 Download the `.dmg` from the [latest release](https://github.com/jchin14/messageBae/releases/latest), open it and drag messageBae into Applications. It's signed and notarised by Apple.
 
 ## Updates
-messageBae checks for a new version on launch and every 12 hours, or use **messageBae > Check for Updates…**. To update, download the new `.dmg`, quit messageBae, drag it into Applications and choose **Replace**. Your settings stay.
+messageBae checks for a new version on launch and every 12 hours, or use **messageBae > Check for Updates…**.
+
+- **Free:** download the new `.dmg`, quit messageBae, drag it into Applications and choose **Replace**. Your settings stay.
+- **Supporters:** [donate any amount](https://buymeacoffee.com/jchin14), then choose **messageBae > Turn On Auto Update…**. New versions download and install themselves, you just restart when asked.
+
+Auto update is on trust. There is no licence key or check, please donate before turning it on.
 
 ## Build from source
 Only if you know your way around the command line. Most people should use the release above.

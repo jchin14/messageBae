@@ -264,29 +264,110 @@ function muteButton() {
 }
 
 // Two-finger swipe sideways over a message or image opens a reply to it.
-let swipeSum = 0, swipeLast = 0, swipeDone = false;
-window.addEventListener('wheel', (e) => {
-  if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && !swipeSum) ipcRenderer.send('debug', `wheel dx=${e.deltaX} over <${e.target.tagName.toLowerCase()}>`);
+// The bubble follows the fingers with a rubber band, snaps out once the
+// pull is far enough, then springs back, like iMessage on the Mac.
+let swipeSum = 0, swipeLast = 0, swipeDone = false, swipeBubble = null, swipeEnd = 0, swipeFresh = false;
+const SWIPE_LIMIT = 160, SWIPE_FIRE = 100;
+// The message bubble (or image) under a point: the widest ancestor that's
+// still clearly narrower than the chat, so it's not the whole row.
+function bubbleAt(x, y) {
+  const main = document.querySelector('[role="main"]');
+  const log = main && (main.querySelector('[role="log"]') || main);
+  if (!log) return null;
+  // Overlays can sit on top, so take the first element inside the chat.
+  let el = document.elementsFromPoint(x, y).find((e) => log.contains(e));
+  if (!el || el.closest('[contenteditable="true"]')) return null;
+  const max = log.getBoundingClientRect().width * 0.9;
+  if (el.getBoundingClientRect().width >= max) return null;
+  while (el.parentElement && log.contains(el.parentElement) && el.parentElement.getBoundingClientRect().width < max) el = el.parentElement;
+  return el;
+}
+function swipeRelease() {
+  const b = swipeBubble;
+  swipeBubble = null;
+  if (!b) return;
+  b.style.transition = 'transform 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.2)';
+  b.style.transform = '';
+  setTimeout(() => { if (b !== swipeBubble) b.style.transition = ''; }, 650);
+}
+function swipeReset() {
+  clearTimeout(swipeEnd);
+  swipeRelease();
+  swipeSum = 0; swipeDone = false; swipeFresh = false;
+}
+// Trackpad gesture phases from the main process. Fingers lifting springs
+// the bubble back at once (momentum events would otherwise hold it out),
+// and a new touch starts a fresh swipe, so the same message can be swiped
+// again straight away. A begin right after an end is the momentum phase.
+let gestureEndAt = 0;
+ipcRenderer.on('gesture', (_e, type) => {
   const now = Date.now();
-  if (now - swipeLast > 300) { swipeSum = 0; swipeDone = false; }
+  if (type === 'gestureScrollEnd') { gestureEndAt = now; if (!swipeDone) swipeRelease(); }
+  if (type === 'gestureScrollBegin' && now - gestureEndAt > 50) swipeFresh = true;
+});
+window.addEventListener('wheel', (e) => {
+  const now = Date.now();
+  // A quiet gap also means a new gesture, in case the phases don't arrive.
+  if (swipeFresh || now - swipeLast > 150) swipeReset();
   swipeLast = now;
-  if (swipeDone || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+  if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) && !swipeSum) return;
+  if (!swipeSum && !swipeDone) swipeBubble = bubbleAt(e.clientX, e.clientY);
+  // After the reply fires, the rest of this gesture (and its momentum) is ignored.
+  if (swipeDone) return;
+  clearTimeout(swipeEnd);
+  swipeEnd = setTimeout(swipeRelease, 150);
   swipeSum += e.deltaX;
-  if (Math.abs(swipeSum) < 60) return;
+  if (swipeBubble) {
+    // Moves with the fingers at first, then eases towards the limit.
+    // A short transition smooths the steps between wheel events.
+    const d = Math.sign(-swipeSum) * SWIPE_LIMIT * (1 - Math.exp(-Math.abs(swipeSum) / SWIPE_LIMIT));
+    swipeBubble.style.transition = 'transform 0.08s ease-out';
+    swipeBubble.style.transform = `translateX(${d.toFixed(1)}px)`;
+  }
+  if (Math.abs(swipeSum) < SWIPE_FIRE) return;
   swipeDone = true;
-  replyButtonAt(e.clientX, e.clientY).then((btn) => {
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    ipcRenderer.send('debug', `swipe at ${e.clientX},${e.clientY} over <${el && el.tagName.toLowerCase()}> target <${e.target.tagName.toLowerCase()}> reply=${btn ? btn.getAttribute('aria-label') : 'none'} buttons=${document.querySelectorAll(REPLY).length}`);
-    if (btn) btn.click();
+  clearTimeout(swipeEnd);
+  // Commit: glide out to the full pull, hold a moment, then spring back.
+  if (swipeBubble) {
+    swipeBubble.style.transition = 'transform 0.08s ease-out';
+    swipeBubble.style.transform = `translateX(${Math.sign(-swipeSum) * SWIPE_LIMIT * 0.75}px)`;
+    swipeEnd = setTimeout(swipeRelease, 120);
+  }
+  // Only this bubble's own buttons count: buttons left showing on a
+  // neighbour (say an image just above) sit within the usual band slack.
+  const r = swipeBubble && swipeBubble.getBoundingClientRect();
+  const band = r ? [r.top - 8, r.bottom + 8, (r.top + r.bottom) / 2] : undefined;
+  replyAt(e.clientX, e.clientY, band).then((ok) => {
+    ipcRenderer.send('debug', `swipe reply at ${e.clientX},${e.clientY} ok=${ok}`);
     // Opening a reply can scroll the whole page; put it back.
     setTimeout(() => { document.documentElement.scrollTop = document.documentElement.scrollLeft = 0; document.body.scrollTop = document.body.scrollLeft = 0; }, 100);
   });
 }, { capture: true, passive: true });
 
+// Reply to the message under a point. Text messages show a Reply button
+// on hover; images only have Reply inside the More actions menu.
+async function replyAt(x, y, band) {
+  return clickReply(await replyButtonAt(x, y, REPLY_OR_MORE, band));
+}
+async function clickReply(btn) {
+  if (!btn) return false;
+  btn.click();
+  if (btn.matches(REPLY)) return true;
+  for (let i = 0; i < 20; i++) {
+    await new Promise((r) => setTimeout(r, 50));
+    const item = [...document.querySelectorAll('[role="menuitem"]')].find((m) => /^reply$/i.test(m.innerText.trim()));
+    if (item) { item.click(); return true; }
+  }
+  ipcRenderer.send('debug', 'reply: no Reply item in the More menu');
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  return false;
+}
+
 // Find the Reply button for the message under a point. Messenger shows it
 // on hover. Images can sit under overlays, so check every element at the
 // point, and nudge a hover if the buttons aren't showing yet.
 const REPLY = '[aria-label="Reply" i], [aria-label^="Reply " i], [aria-label*="reply to" i]';
+const REPLY_OR_MORE = `${REPLY}, [aria-label="More" i], [aria-label^="More " i]`;
 // The vertical band of the message under an element: its row if
 // Messenger marks one, otherwise the element itself (e.g. the image).
 // A row can hold several messages, so the band is the hovered element
@@ -311,15 +392,16 @@ function findReply(el, band, sel = REPLY) {
   const mid = (b) => { const r = b.getBoundingClientRect(); return Math.abs(r.top + r.height / 2 - band[2]); };
   return [...scope.querySelectorAll(sel)].filter((b) => inBand(b, band)).sort((a, b) => mid(a) - mid(b))[0] || null;
 }
-function replyButtonNow(x, y, sel = REPLY) {
+// band: optional [top, bottom, mid] to use in place of each element's own.
+function replyButtonNow(x, y, sel = REPLY, band) {
   for (const el of document.elementsFromPoint(x, y)) {
-    const btn = findReply(el, messageBand(el), sel);
+    const btn = findReply(el, band || messageBand(el), sel);
     if (btn) return btn;
   }
   return null;
 }
-async function replyButtonAt(x, y, sel = REPLY) {
-  const btn = replyButtonNow(x, y, sel);
+async function replyButtonAt(x, y, sel = REPLY, band) {
+  const btn = replyButtonNow(x, y, sel, band);
   if (btn) return btn;
   const el = document.elementFromPoint(x, y);
   if (!el) return null;
@@ -338,7 +420,7 @@ async function replyButtonAt(x, y, sel = REPLY) {
     await ipcRenderer.invoke('hover-at', hx, hy);
     for (let i = 0; i < 6; i++) {
       await new Promise((r) => setTimeout(r, 50));
-      const found = findReply(el, messageBand(el), sel);
+      const found = findReply(el, band || messageBand(el), sel);
       if (found) return found;
     }
   }
@@ -398,7 +480,7 @@ let ctxLookup = null;
 window.addEventListener('contextmenu', (e) => {
   ctxPoint = [e.clientX, e.clientY];
   const t0 = Date.now();
-  ctxLookup = replyButtonAt(...ctxPoint).then((btn) => {
+  ctxLookup = replyButtonAt(...ctxPoint, REPLY_OR_MORE).then((btn) => {
     ipcRenderer.send('debug', `right-click lookup took ${Date.now() - t0}ms`);
     return btn;
   });
@@ -447,7 +529,7 @@ function messageTextAt(x, y) {
   }
   return '';
 }
-ipcRenderer.on('reply-do', () => { if (ctxReply) ctxReply.click(); ctxReply = null; });
+ipcRenderer.on('reply-do', () => { clickReply(ctxReply); ctxReply = null; });
 ipcRenderer.on('unsend-do', async () => {
   const more = ctxMore; ctxMore = null;
   if (!more) return;
@@ -520,9 +602,17 @@ function radioRow(r) {
 async function handleUnsendDialog(d, radios) {
   const everyone = radios.find((r) => /everyone/i.test(radioText(r)));
   const you = radios.find((r) => /for you/i.test(radioText(r)));
-  const buttons = [...d.querySelectorAll('[role="button"], button')];
+  // Messenger puts a hidden copy of each button's label inside the other
+  // button so both end up the same width. Skip those: the first "Remove"
+  // in the DOM is the hidden copy inside Cancel, and clicking it does nothing.
+  const shown = (el) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' && !el.closest('[aria-hidden="true"]');
+  };
+  const buttons = [...d.querySelectorAll('[role="button"], button')].filter(shown);
   const confirm = buttons.find((b) => /^(remove|unsend)$/i.test(labelOf(b)));
   const cancel = buttons.find((b) => /^(cancel|close)$/i.test(labelOf(b)));
+  ipcRenderer.send('debug', `unsend dialog: buttons ${buttons.map((b) => labelOf(b).slice(0, 12)).join('/')} radios ${radios.map((r) => radioText(r).slice(0, 20)).join('/')}`);
   if (!confirm || (!everyone && !you)) {
     return ipcRenderer.send('debug', `unsend dialog: parts missing (everyone=${!!everyone} you=${!!you} confirm=${!!confirm}), showing Messenger's`);
   }
@@ -544,10 +634,11 @@ async function handleUnsendDialog(d, radios) {
     await realClick(confirm, 'confirm');
   }
   ipcRenderer.send('debug', `unsend dialog: ${d.isConnected ? 'open' : 'closed'} after clicks`);
-  // Still open? Show Messenger's dialog so it can be finished by hand.
+  // The layer outlives the dialog and holds the next one, so always unhide
+  // it. Still open after a moment? Messenger's dialog shows to finish by hand.
+  if (!d.isConnected) layer.classList.remove('messagebae-hidden');
   setTimeout(() => {
-    if (!d.isConnected) return;
-    ipcRenderer.send('debug', 'unsend dialog: still open, showing it');
+    if (d.isConnected) ipcRenderer.send('debug', 'unsend dialog: still open, showing it');
     layer.classList.remove('messagebae-hidden');
   }, 1500);
 }
