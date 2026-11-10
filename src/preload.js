@@ -700,7 +700,7 @@ window.addEventListener('keydown', (e) => {
 function roundCard() {
   const main = document.querySelector('[role="main"]');
   const box = main && main.querySelector('[contenteditable="true"]');
-  if (!box) return;
+  if (!box || main.getBoundingClientRect().width < 100) return; // no chat open (compact view list)
   for (let n = box.parentElement; n && n !== main; n = n.parentElement) {
     if (n.offsetHeight < main.offsetHeight * 0.5) continue;
     const cs = getComputedStyle(n);
@@ -745,6 +745,7 @@ function findColumn(side) {
     const nav = document.querySelector(NAV);
     const input = nav && nav.querySelector('input');
     if (!input || !input.offsetWidth) return null; // icons-only (narrow window)
+    if (!nav.offsetHeight) return null; // single pane (narrow window): the chat list is hidden
     const w = nav.getBoundingClientRect().width;
     let top = nav;
     while (top.parentElement && top.parentElement !== document.body &&
@@ -804,6 +805,7 @@ function placeHandle(side) {
   const p = panels[side];
   if (!p.col) { p.handle.style.display = 'none'; return; }
   const r = p.col.getBoundingClientRect();
+  if (r.height < 100) { p.handle.style.display = 'none'; return; }
   let x = side === 'left' ? r.right : r.left;
   // Centre the handle in the gap between the panel and the conversation card.
   const card = document.querySelector('.messagebae-card');
@@ -853,13 +855,25 @@ function makeHandle(side) {
   return h;
 }
 
+// Compact view: below about 660px wide Messenger shows one pane at a time,
+// the chat list or the chat, full width (a Back button swaps them). Saved
+// panel widths and the drag handles don't apply there.
+function singlePane() {
+  const nav = document.querySelector(NAV);
+  const main = document.querySelector('[role="main"]');
+  if (!nav || !main) return false;
+  return !nav.offsetHeight || main.getBoundingClientRect().width < 100;
+}
+
 function layoutPanels() {
   if (!document.documentElement.classList.contains('messagebae')) return;
+  const single = singlePane();
+  document.documentElement.classList.toggle('messagebae-single', single);
   for (const side of ['left', 'right']) {
     const p = panels[side];
     if (!p.handle) p.handle = makeHandle(side);
     if (p.handle.classList.contains('dragging')) continue;
-    p.col = findColumn(side);
+    p.col = single ? null : findColumn(side);
     if (!p.col) { clearWidth(p); placeHandle(side); continue; }
     const saved = loadW(p);
     if (saved && Math.abs(p.col.getBoundingClientRect().width - clampW(saved)) > 1) applyWidth(p, clampW(saved));

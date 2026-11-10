@@ -13,9 +13,9 @@ Download the `.dmg` from the [latest release](https://github.com/jchin14/message
 messageBae checks for a new version on launch and every 12 hours, or use **messageBae > Check for Updates…**.
 
 - **Free:** download the new `.dmg`, quit messageBae, drag it into Applications and choose **Replace**. Your settings stay.
-- **Supporters:** [donate any amount](https://buymeacoffee.com/jchin14), then choose **messageBae > Turn On Auto Update…**. New versions download and install themselves, you just restart when asked.
+- **Supporters:** [donate any amount](https://buymeacoffee.com/jchin14). The thank you page shows a supporter code. Choose **messageBae > Turn On Auto Update…**, pick **Enter Code…** and paste it in. New versions download and install themselves, you just restart when asked.
 
-Auto update is on trust. There is no licence key or check, please donate before turning it on.
+The code is the same for everyone and only its hash is in the app. It's a small gate, not a licence check, so please donate before using it.
 
 ## Build from source
 Only if you know your way around the command line. Most people should use the release above.
@@ -94,12 +94,15 @@ Keep your hands on the keyboard. The shortcuts work like the ones you know from 
 ## Right-click
 - **Reply** on any message or image.
 - **Unsend** on your own messages and images, with a small Mac popup to confirm in place of Messenger's big one (also from Messenger's own ⋯ menu).
+- **Spelling** on a misspelled word: macOS suggestions and Add to Dictionary.
 - **Copy Message** copies the whole message. **Copy** copies selected text.
 - On images: copy or save.
 
+## Mac menus and dialogs
+The app menu, right-click menus and confirmations (unsend, updates, the supporter code) are native Mac menus and sheets, not web popups.
+
 ## Links
-- Facebook links open in a new messageBae window. Other links open in your browser.
-- Prefer your browser for everything? Tick **View > Open Facebook Links in Browser**.
+- All links, Facebook ones included, open in your default browser.
 
 ## Startup
 - Opens in front, unless you switch to another app while it loads. Then it waits in the background.
@@ -110,7 +113,6 @@ In the **View** menu:
 - **Clear Badge**: reset the unread count to 0
 - **Show Badge Count**: on/off
 - **Show Menu Bar Icon**: on/off
-- **Open Facebook Links in Browser**: on/off
 - **Restore Window Size After Close**: opens where you last left it
 - **Save Current Window Size and Position for Launch**: opens at this size, on this monitor
 - **Forget Saved Window Size**: back to the default

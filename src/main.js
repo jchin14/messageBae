@@ -22,6 +22,11 @@ app.on('did-resign-active', () => { if (appActive) leftAfterLaunch = true; appAc
 // Settings: defaults.json merged with the user's settings.json in
 // ~/Library/Application Support/<app>/ (created on first run).
 const DEFAULTS = require('./defaults.json');
+// Supporter codes for auto update, shown on the Buy Me a Coffee thank you
+// page. Only hashes live here. Keep old ones so existing supporters stay on.
+const CODE_HASHES = ['2816f06106e17e472ab63a730d59e220d0b9e53cab17a4cc8904c7c2248423e7'];
+const codeOk = (code) => !!code && CODE_HASHES.includes(
+  require('crypto').createHash('sha256').update(String(code).trim()).digest('hex'));
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 function loadSettings() {
   const file = settingsPath();
@@ -36,15 +41,17 @@ function loadSettings() {
     showBadge: user.showBadge ?? DEFAULTS.showBadge,
     showMenuBarIcon: user.showMenuBarIcon ?? DEFAULTS.showMenuBarIcon,
     openInBackground: user.openInBackground ?? DEFAULTS.openInBackground,
-    openLinksInBrowser: user.openLinksInBrowser ?? DEFAULTS.openLinksInBrowser,
     windowBounds: user.windowBounds || null,
     rememberWindowSize: user.rememberWindowSize ?? DEFAULTS.rememberWindowSize,
     notifications: ['messenger', 'messagebae', 'off'].includes(user.notifications) ? user.notifications : DEFAULTS.notifications,
     notificationSound: user.notificationSound || DEFAULTS.notificationSound,
     silenceMessengerSound: user.silenceMessengerSound ?? DEFAULTS.silenceMessengerSound,
-    autoUpdate: user.autoUpdate ?? DEFAULTS.autoUpdate,
+    // The code itself is stored, not a switch, so the settings file can't
+    // turn auto update on by hand.
+    supporterCode: typeof user.supporterCode === 'string' ? user.supporterCode.trim() : '',
     lastWindowBounds: user.lastWindowBounds || null,
     shortcuts: { ...DEFAULTS.shortcuts, ...user.shortcuts },
+    get autoUpdate() { return codeOk(this.supporterCode); },
   };
 }
 
@@ -125,16 +132,6 @@ const badgeItems = () => [
       settings.showMenuBarIcon = item.checked;
       saveSetting('showMenuBarIcon', item.checked);
       updateTray();
-      buildMenu();
-    },
-  },
-  {
-    label: 'Open Facebook Links in Browser',
-    type: 'checkbox',
-    checked: settings.openLinksInBrowser,
-    click: (item) => {
-      settings.openLinksInBrowser = item.checked;
-      saveSetting('openLinksInBrowser', item.checked);
       buildMenu();
     },
   },
@@ -261,8 +258,7 @@ function createWindow() {
 
   // External links open in the default browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    // Facebook links open in a new app window, unless the user prefers their browser.
-    if (isInternal(url) && !settings.openLinksInBrowser) return { action: 'allow' };
+    // Every link, Facebook ones included, opens in the default browser.
     shell.openExternal(url);
     return { action: 'deny' };
   });
@@ -286,6 +282,17 @@ function createWindow() {
   win.webContents.on('context-menu', async (_e, p) => {
     const { reply, unsend, text } = await replyCheck();
     const items = [];
+    // Misspelled word: macOS spell checker suggestions and Add to Dictionary.
+    if (p.misspelledWord) {
+      ipcMain.emit('debug', null, `spell: ${p.misspelledWord} -> ${(p.dictionarySuggestions || []).join(', ')}`);
+      const fixes = (p.dictionarySuggestions || []).slice(0, 5);
+      items.push(...fixes.map((s) => ({ label: s, click: () => win.webContents.replaceMisspelling(s) })));
+      if (!fixes.length) items.push({ label: 'No Guesses Found', enabled: false });
+      items.push(
+        { label: 'Add to Dictionary', click: () => ses.addWordToSpellCheckerDictionary(p.misspelledWord) },
+        { type: 'separator' },
+      );
+    }
     if (reply) items.push({ label: 'Reply', click: () => win.webContents.send('reply-do') });
     if (p.selectionText) items.push({ label: 'Copy', role: 'copy' });
     if (text && p.mediaType !== 'image') {
@@ -299,6 +306,7 @@ function createWindow() {
       );
     }
     if (unsend) items.push({ type: 'separator' }, { label: 'Unsend…', click: () => win.webContents.send('unsend-do') });
+    if (items.at(-1)?.type === 'separator') items.pop();
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
 
@@ -509,22 +517,42 @@ const COFFEE = 'https://buymeacoffee.com/jchin14';
 const { autoUpdater } = require('electron-updater');
 autoUpdater.autoDownload = false;
 autoUpdater.logger = { info: (m) => ipcMain.emit('debug', null, `updater: ${m}`), warn: (m) => ipcMain.emit('debug', null, `updater: ${m}`), error: (m) => ipcMain.emit('debug', null, `updater: ${m}`), debug: () => {} };
-function setAutoUpdate(on) {
-  settings.autoUpdate = on;
-  saveSetting('autoUpdate', on);
+function setAutoUpdate(code) {
+  settings.supporterCode = code ? String(code).trim() : '';
+  saveSetting('supporterCode', settings.supporterCode);
   buildMenu();
-  if (on) checkForUpdates();
+  if (settings.autoUpdate) checkForUpdates();
 }
 async function askAutoUpdate() {
   const { response } = await dialog.showMessageBox(win, {
     message: 'Auto update is for supporters',
-    detail: 'Donate any amount, then turn it on. messageBae will download and install new versions itself.\n\nIt works on trust: there is no check. Thanks for supporting it.',
-    buttons: ['Donate…', "I've Donated, Turn It On", 'Cancel'],
+    detail: 'Donate any amount and the thank you page shows a supporter code. Enter it here and messageBae will download and install new versions itself.',
+    buttons: ['Donate…', 'Enter Code…', 'Cancel'],
     defaultId: 0,
     cancelId: 2,
   });
   if (response === 0) shell.openExternal(COFFEE);
-  if (response === 1) setAutoUpdate(true);
+  if (response === 1) askCode();
+}
+// Ask for the supporter code in a small sheet (code.html) over the main window.
+function askCode() {
+  const sheet = new BrowserWindow({
+    parent: win, modal: true, show: false, width: 420, height: 196, resizable: false, minimizable: false, maximizable: false,
+    vibrancy: 'sheet', webPreferences: { preload: path.join(__dirname, 'code-preload.js'), contextIsolation: true, sandbox: true },
+  });
+  sheet.setMenu(null);
+  sheet.loadFile(path.join(__dirname, 'code.html'));
+  sheet.once('ready-to-show', () => sheet.show());
+  const done = () => { ipcMain.removeHandler('code-check'); ipcMain.removeListener('code-cancel', done); if (!sheet.isDestroyed()) sheet.close(); };
+  ipcMain.handle('code-check', (_e, code) => {
+    if (!codeOk(code)) return false;
+    done();
+    setAutoUpdate(code);
+    dialog.showMessageBox(win, { message: 'Auto update is on', detail: 'Thanks for supporting messageBae. New versions will install themselves.' });
+    return true;
+  });
+  ipcMain.on('code-cancel', done);
+  sheet.on('closed', done);
 }
 // Auto update: download, then offer to restart. Errors fall back to the
 // manual flow below, so a broken feed never hides an update.

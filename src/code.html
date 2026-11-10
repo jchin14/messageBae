@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html, body { height: 100%; overflow: hidden; }
+  body { margin: 0; padding: 20px 20px 16px; font: 13px -apple-system, system-ui; color: -apple-system-label; background: transparent; -webkit-user-select: none; }
+  h1 { font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+  p { margin: 0 0 12px; color: -apple-system-secondary-label; }
+  input { width: 100%; box-sizing: border-box; font: 13px -apple-system, system-ui; padding: 5px 7px; border: 1px solid rgba(128,128,128,.5); border-radius: 6px; outline: none; background: -apple-system-text-background; color: -apple-system-label; }
+  input:focus { box-shadow: 0 0 0 3px rgba(0,122,255,.35); border-color: #0a7aff; }
+  .err { color: #e5484d; min-height: 16px; margin: 6px 0 8px; }
+  .row { display: flex; justify-content: flex-end; gap: 10px; }
+  button { font: 13px -apple-system, system-ui; padding: 4px 14px; border-radius: 6px; border: 1px solid rgba(128,128,128,.4); background: -apple-system-control-background; color: -apple-system-label; }
+  button.ok { background: #0a7aff; border-color: #0a7aff; color: #fff; }
+</style>
+<h1>Enter your supporter code</h1>
+<p>Copy it from the thank you page after you donate.</p>
+<input id="code" autocomplete="off" spellcheck="false" placeholder="Paste your code">
+<div class="err" id="err"></div>
+<div class="row"><button id="cancel">Cancel</button><button class="ok" id="ok">Turn On</button></div>
+<script>
+  const box = document.getElementById('code');
+  const err = document.getElementById('err');
+  box.focus();
+  const submit = async () => {
+    const ok = await window.sheet.check(box.value);
+    if (!ok) { err.textContent = "That code didn't match. Copy the whole code from the thank you page."; box.select(); }
+  };
+  document.getElementById('ok').onclick = submit;
+  box.onkeydown = (e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') window.sheet.cancel(); };
+  document.getElementById('cancel').onclick = () => window.sheet.cancel();
+</script>
