@@ -1,6 +1,6 @@
 {
   "name": "messagebae",
-  "version": "1.26.5",
+  "version": "1.26.6",
   "private": true,
   "description": "A small macOS app for Facebook Messenger chats, with keyboard shortcuts, mute and a menu bar icon. Unofficial.",
   "main": "src/main.js",
@@ -53,14 +53,14 @@
     }
   },
   "devDependencies": {
-    "electron": "^45.2.2",
+    "electron": "^45.3.0",
     "electron-builder": "^26.18.0"
   },
   "license": "PolyForm-Noncommercial-1.0.0",
   "author": "Jonathan Chin <messageBae@jchin.au>",
   "dependencies": {
     "electron-updater": "^6.8.11",
-    "emojilib": "^3.0.12"
+    "emojilib": "^4.0.3"
   },
   "overrides": {
     "minimatch@>=7.0.0 <11.0.1": "^11.0.1"

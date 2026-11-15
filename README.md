@@ -1,13 +1,22 @@
 # messageBae
 
-A small macOS app for Facebook Messenger. It opens facebook.com/messages in its own window, with shortcuts, mute and a menu bar icon.
+A small macOS app for Facebook Messenger, a direct replacement for the old Messenger app for Mac. It opens facebook.com/messages in its own window, with shortcuts, mute and a menu bar icon.
 
 > Unofficial. Not made by or linked to Meta. May break when Facebook changes its site.
 
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/jchin14)
 
+## How it works
+messageBae opens Messenger in its own window and tweaks the page locally with a little JavaScript. There's no server in the middle: your Mac connects straight to Meta's servers, the same as a browser tab.
+
+- A real Mac app in your Dock, no browser needed
+- Stays logged in between launches
+- Native Mac notifications
+- Small and light
+- No tracking, analytics or servers of its own
+
 ## Install
-Download the `.dmg` from the [latest release](https://github.com/jchin14/messageBae/releases/latest), open it and drag messageBae into Applications. It's signed and notarised by Apple.
+Download the `.dmg` from the [latest release](https://github.com/jchin14/messageBae/releases/latest), open it and drag messageBae into Applications. It's signed and notarised by Apple for your security.
 
 ## Updates
 messageBae checks for a new version on launch and every 12 hours, or use **messageBae > Check for Updates…**.
@@ -15,7 +24,7 @@ messageBae checks for a new version on launch and every 12 hours, or use **messa
 - **Free:** download the new `.dmg`, quit messageBae, drag it into Applications and choose **Replace**. Your settings stay.
 - **Supporters:** [donate any amount](https://buymeacoffee.com/jchin14). The thank you page shows a supporter code. Choose **messageBae > Turn On Auto Update…**, pick **Enter Code…** and paste it in. New versions download and install themselves, you just restart when asked.
 
-The code is the same for everyone and only its hash is in the app. It's a small gate, not a licence check, so please donate before using it.
+The code is the same for everyone and only its hash is in the app. It's a small gate, not a licence check, so please donate before using it. Donations help cover the Apple developer account, domain and hosting.
 
 ## Build from source
 Only if you know your way around the command line. Most people should use the release above.
@@ -129,4 +138,4 @@ Found a bug or something not working? [Open an issue](https://github.com/jchin14
 If you find this useful and can afford to, support is appreciated: [buy me a coffee](https://buymeacoffee.com/jchin14). Just getting started, the domain, hosting, Cloudflare Workers and Apple and Google developer accounts add up to a few hundred dollars. Your support helps me keep making tools that are helpful for everyone.
 
 ## License
-[PolyForm Noncommercial 1.0.0](LICENSE.md). Free for personal use. For commercial use, email [licensing@jchin.au](mailto:licensing@jchin.au) or [open an issue](https://github.com/jchin14/messageBae/issues).
+[PolyForm Noncommercial 1.0.0](LICENSE.md). Free for personal use. Any redistribution, or use in a commercial setting, needs my OK first: email [licensing@jchin.au](mailto:licensing@jchin.au) or [open an issue](https://github.com/jchin14/messageBae/issues).

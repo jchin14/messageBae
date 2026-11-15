@@ -6,7 +6,7 @@
 <title>messageBae - Facebook Messenger app for Mac</title>
 <meta name="description" content="messageBae is a free Facebook Messenger app for Mac. Keyboard shortcuts, Dock badge, notifications and swipe to reply. Apple silicon, signed and notarised.">
 <link rel="canonical" href="https://messagebae.jchin.au/">
-<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"SoftwareApplication","name":"messageBae","url":"https://messagebae.jchin.au/","description":"A free Facebook Messenger app for Mac with keyboard shortcuts, a Dock badge and swipe to reply.","applicationCategory":"CommunicationApplication","operatingSystem":"macOS (Apple silicon)","offers":{"@type":"Offer","price":"0","priceCurrency":"AUD"},"downloadUrl":"https://github.com/jchin14/messageBae/releases","author":{"@type":"Person","name":"Jonathan Chin","url":"https://jchin.au/"}},{"@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is there a Facebook Messenger app for Mac?","acceptedAnswer":{"@type":"Answer","text":"Yes. messageBae is a free Messenger app for Mac on Apple silicon. Download the .dmg from GitHub Releases and drag it into Applications."}},{"@type":"Question","name":"Is messageBae free?","acceptedAnswer":{"@type":"Answer","text":"Yes, messageBae is free."}},{"@type":"Question","name":"Is messageBae made by Meta?","acceptedAnswer":{"@type":"Answer","text":"No. It is unofficial and not made by or linked to Meta."}},{"@type":"Question","name":"How do I update messageBae?","acceptedAnswer":{"@type":"Answer","text":"messageBae tells you when a new version is out. Download the new .dmg and replace the old app. Your settings stay."}}]}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"SoftwareApplication","name":"messageBae","url":"https://messagebae.jchin.au/","description":"A free Facebook Messenger app for Mac with keyboard shortcuts, a Dock badge and swipe to reply.","applicationCategory":"CommunicationApplication","operatingSystem":"macOS (Apple silicon)","offers":{"@type":"Offer","price":"0","priceCurrency":"AUD"},"downloadUrl":"https://github.com/jchin14/messageBae/releases","author":{"@type":"Person","name":"Jonathan Chin","url":"https://jchin.au/"}},{"@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is there a Facebook Messenger app for Mac?","acceptedAnswer":{"@type":"Answer","text":"Yes. messageBae is a free Messenger app for Mac on Apple silicon. Download the .dmg from GitHub Releases and drag it into Applications."}},{"@type":"Question","name":"Is messageBae free?","acceptedAnswer":{"@type":"Answer","text":"Yes, free for personal use. Redistribution or use in a commercial setting needs permission first."}},{"@type":"Question","name":"Does messageBae go through its own server?","acceptedAnswer":{"@type":"Answer","text":"No. It opens Messenger in its own window and connects straight to Meta's servers, the same as a browser tab. No tracking, analytics or servers of its own."}},{"@type":"Question","name":"Is messageBae made by Meta?","acceptedAnswer":{"@type":"Answer","text":"No. It is unofficial and not made by or linked to Meta."}},{"@type":"Question","name":"How do I update messageBae?","acceptedAnswer":{"@type":"Answer","text":"messageBae tells you when a new version is out. Download the new .dmg and replace the old app. Supporters who donate get a code that turns on auto update."}}]}]}</script>
 <link rel="icon" href="icon.png">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://messagebae.jchin.au/">
@@ -28,14 +28,17 @@
   <header>
     <img src="icon.png" alt="">
     <h1>messageBae</h1>
-    <p class="muted">A small macOS app for Facebook Messenger.</p>
+    <p class="muted">A small macOS app for Facebook Messenger. A direct replacement for the old Messenger app for Mac.</p>
     <a class="btn" href="https://github.com/jchin14/messageBae" target="_blank" rel="noopener">Download for Mac</a>
     <p class="muted">Free · Apple silicon · macOS</p>
   </header>
 
   <h2>Features</h2>
   <ul>
+    <li>A real Mac app in your Dock, no browser needed</li>
     <li>Messenger in its own window, with a Dock badge and menu bar icon</li>
+    <li>Stays logged in between launches</li>
+    <li>Native Mac notifications</li>
     <li>Familiar Mac shortcuts that save you time</li>
     <li>Mute, and a notify mode that brings the window forward</li>
     <li>Swipe with two fingers to reply, double-click or hold to react</li>
@@ -46,7 +49,11 @@
     <li>All links, Facebook ones included, open in your browser</li>
     <li>Remembers your window size and monitor</li>
     <li>View stays locked, with a reset button if it ever shifts</li>
+    <li>Small and light, with no tracking, analytics or servers of its own</li>
   </ul>
+
+  <h2>How it works</h2>
+  <p>messageBae opens Messenger in its own window and tweaks the page locally with a little JavaScript. There's no server in the middle: your Mac connects straight to Meta's servers, the same as a browser tab.</p>
 
   <h2>Known limitations</h2>
   <ul>
@@ -75,14 +82,15 @@
       <li>Log in to Facebook.</li>
     </ol>
   </div>
-  <p class="muted">Signed and notarised by Apple.</p>
+  <p class="muted">Signed and notarised by Apple for your security.</p>
 
   <h2>Updates</h2>
   <p>messageBae tells you when a new version is out. Download the new <code>.dmg</code> from <a href="https://github.com/jchin14/messageBae/releases">Releases</a> and replace the old app. Your settings stay.</p>
-  <p>Supporters get auto update: <a href="https://buymeacoffee.com/jchin14">donate any amount</a>, copy the supporter code from the thank you page and paste it into <b>messageBae &gt; Turn On Auto Update…</b>. New versions then install themselves.</p>
+  <p>Supporters get auto update: <a href="https://buymeacoffee.com/jchin14">donate any amount</a>, copy the supporter code from the thank you page and paste it into <b>messageBae &gt; Turn On Auto Update…</b>. New versions then install themselves. Donations help cover the Apple developer account, domain and hosting.</p>
 
   <footer>
     <p>Unofficial. Not made by or linked to Meta.</p>
+    <p>Free for personal use. Any redistribution, or use in a commercial setting, needs my OK first: <a href="mailto:licensing@jchin.au">licensing@jchin.au</a>.</p>
     <p><a href="https://github.com/jchin14/messageBae">GitHub</a> · <a href="privacy/">Privacy</a> · <a href="https://buymeacoffee.com/jchin14">Buy me a coffee ☕</a></p>
     <p>© 2026 <a href="https://jchin.au">Jonathan Chin</a></p>
   </footer>

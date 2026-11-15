@@ -531,8 +531,9 @@ async function askAutoUpdate() {
     defaultId: 0,
     cancelId: 2,
   });
+  // Donating opens the browser, and the code sheet waits here for when they come back.
   if (response === 0) shell.openExternal(COFFEE);
-  if (response === 1) askCode();
+  if (response === 0 || response === 1) askCode();
 }
 // Ask for the supporter code in a small sheet (code.html) over the main window.
 function askCode() {
