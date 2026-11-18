@@ -23,76 +23,151 @@
 <meta name="twitter:image" content="https://messagebae.jchin.au/og.png">
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="home">
+<nav class="top">
+  <a class="brand" href="./"><img src="icon.png" alt="" width="28" height="28">messageBae</a>
+  <div class="links">
+    <a href="https://github.com/jchin14/messageBae">GitHub</a>
+    <a href="privacy/">Privacy</a>
+  </div>
+</nav>
+
 <main>
-  <header>
-    <img src="icon.png" alt="">
-    <h1>messageBae</h1>
-    <p class="muted">A small macOS app for Facebook Messenger. A direct replacement for the old Messenger app for Mac.</p>
-    <a class="btn" href="https://github.com/jchin14/messageBae" target="_blank" rel="noopener">Download for Mac</a>
-    <p class="muted">Free · Apple silicon · macOS</p>
+  <header class="hero">
+    <div class="hero-text">
+      <h1>Facebook Messenger, as a real Mac app</h1>
+      <p class="lede">A small macOS app for Facebook Messenger. A direct replacement for the old Messenger app for Mac.</p>
+      <div class="actions">
+        <a class="btn" href="https://github.com/jchin14/messageBae/releases/latest">Download for Mac</a>
+        <a class="quiet" href="https://github.com/jchin14/messageBae">View on GitHub</a>
+      </div>
+      <p class="meta">Free · Apple silicon · Signed and notarised</p>
+    </div>
+
+    <div class="preview" aria-hidden="true">
+      <div class="window">
+        <div class="titlebar">
+          <span class="lights"><i></i><i></i><i></i></span>
+          <span class="wtitle">messageBae</span>
+        </div>
+        <div class="app">
+          <aside class="chats">
+            <div class="search"><kbd>⌘</kbd><kbd>K</kbd><span>Find a chat</span></div>
+            <div class="chat active"><span class="av a1">SP</span><span class="cl"><b>Sam Patel</b><small>Still on for Saturday?</small></span><span class="dot"></span></div>
+            <div class="chat"><span class="av a2">M</span><span class="cl"><b>Mum</b><small>Call me when you land</small></span></div>
+            <div class="chat"><span class="av a3">5s</span><span class="cl"><b>Thursday 5s</b><small>Court 3 at 7:30</small></span><span class="dot"></span></div>
+            <div class="chat"><span class="av a4">PR</span><span class="cl"><b>Priya Rao</b><small>You: Sent the photos</small></span></div>
+          </aside>
+          <section class="thread">
+            <div class="msgs">
+              <p class="in">Still on for Saturday?</p>
+              <p class="in">Thinking brunch then the markets</p>
+              <p class="out">Yes, 10:30 works</p>
+              <p class="out">I'll book a table</p>
+              <p class="in">Perfect</p>
+            </div>
+            <div class="composer">Message</div>
+          </section>
+        </div>
+      </div>
+      <div class="dock"><span class="dock-app"><img src="icon.png" alt=""><span class="badge">3</span></span></div>
+    </div>
   </header>
 
-  <h2>Features</h2>
-  <ul>
-    <li>A real Mac app in your Dock, no browser needed</li>
-    <li>Messenger in its own window, with a Dock badge and menu bar icon</li>
-    <li>Stays logged in between launches</li>
-    <li>Native Mac notifications</li>
-    <li>Familiar Mac shortcuts that save you time</li>
-    <li>Mute, and a notify mode that brings the window forward</li>
-    <li>Swipe with two fingers to reply, double-click or hold to react</li>
-    <li>Click anywhere in a chat to start typing straight away</li>
-    <li>Resizable window and panels, and Messenger's own buttons all work</li>
-    <li>Right-click to reply, unsend, fix spelling or save images</li>
-    <li>Native Mac menus and sheets for right-click and confirmations, not web popups</li>
-    <li>All links, Facebook ones included, open in your browser</li>
-    <li>Remembers your window size and monitor</li>
-    <li>View stays locked, with a reset button if it ever shifts</li>
-    <li>Small and light, with no tracking, analytics or servers of its own</li>
-  </ul>
+  <section class="row">
+    <h2>Features</h2>
+    <div class="groups">
+      <div>
+        <h3>A proper Mac app</h3>
+        <ul>
+          <li>A real Mac app in your Dock, no browser needed</li>
+          <li>Messenger in its own window, with a Dock badge and menu bar icon</li>
+          <li>Stays logged in between launches</li>
+          <li>Native Mac notifications</li>
+          <li>Native Mac menus and sheets for right-click and confirmations, not web popups</li>
+          <li>Remembers your window size and monitor</li>
+          <li>Resizable window and panels, and Messenger's own buttons all work</li>
+          <li>Small and light, with no tracking, analytics or servers of its own</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Faster chatting</h3>
+        <ul>
+          <li>Familiar Mac shortcuts that save you time</li>
+          <li>Click anywhere in a chat to start typing straight away</li>
+          <li>Swipe with two fingers to reply, double-click or hold to react</li>
+          <li>Right-click to reply, unsend, fix spelling or save images</li>
+          <li>Mute, and a notify mode that brings the window forward</li>
+          <li>All links, Facebook ones included, open in your browser</li>
+          <li>View stays locked, with a reset button if it ever shifts</li>
+        </ul>
+      </div>
+    </div>
+  </section>
 
-  <h2>How it works</h2>
-  <p>messageBae opens Messenger in its own window and tweaks the page locally with a little JavaScript. There's no server in the middle: your Mac connects straight to Meta's servers, the same as a browser tab.</p>
+  <section class="row">
+    <h2>How it works</h2>
+    <div>
+      <p>messageBae opens Messenger in its own window and tweaks the page locally with a little JavaScript. There's no server in the middle: your Mac connects straight to Meta's servers, the same as a browser tab.</p>
+    </div>
+  </section>
 
-  <h2>Known limitations</h2>
-  <ul>
-    <li>Clicking a quoted message in a reply makes the screen jump briefly, as Messenger scrolls up and messageBae moves it back</li>
-  </ul>
+  <section class="row">
+    <h2>Known limitations</h2>
+    <ul>
+      <li>Clicking a quoted message in a reply makes the screen jump briefly, as Messenger scrolls up and messageBae moves it back</li>
+    </ul>
+  </section>
 
-  <h2>Shortcuts</h2>
-  <p>Keep your hands on the keyboard. They work like iMessage and other Mac apps, so there's nothing new to learn.</p>
-  <ul>
-    <li><b>Cmd+K</b> find a chat, <b>Cmd+L</b> start typing</li>
-    <li><b>Cmd+1-9</b> jump to a chat, <b>Ctrl+Tab</b> / <b>Ctrl+Shift+Tab</b> next / previous</li>
-    <li><b>Cmd+U</b> attach a photo or file (drag and drop works too)</li>
-    <li>Click anywhere in a chat to start typing</li>
-    <li><b>Cmd+Shift+M</b> toggle mute, <b>Cmd+N</b> toggle notify mode, <b>Cmd+B</b> clear badge</li>
-    <li>Swipe with two fingers to reply, double-click or hold to react</li>
-  </ul>
+  <section class="row">
+    <h2>Shortcuts</h2>
+    <div>
+      <p>Keep your hands on the keyboard. They work like iMessage and other Mac apps, so there's nothing new to learn.</p>
+      <dl class="keys">
+        <dt><kbd>⌘</kbd><kbd>K</kbd></dt><dd>Find a chat</dd>
+        <dt><kbd>⌘</kbd><kbd>L</kbd></dt><dd>Start typing</dd>
+        <dt><kbd>⌘</kbd><kbd>1</kbd> to <kbd>9</kbd></dt><dd>Jump to a chat</dd>
+        <dt><kbd>⌃</kbd><kbd>Tab</kbd></dt><dd>Next chat</dd>
+        <dt><kbd>⌃</kbd><kbd>⇧</kbd><kbd>Tab</kbd></dt><dd>Previous chat</dd>
+        <dt><kbd>⌘</kbd><kbd>U</kbd></dt><dd>Attach a photo or file (drag and drop works too)</dd>
+        <dt><kbd>⌘</kbd><kbd>⇧</kbd><kbd>M</kbd></dt><dd>Toggle mute</dd>
+        <dt><kbd>⌘</kbd><kbd>N</kbd></dt><dd>Toggle notify mode</dd>
+        <dt><kbd>⌘</kbd><kbd>B</kbd></dt><dd>Clear badge</dd>
+        <dt class="gesture">Click</dt><dd>Anywhere in a chat to start typing</dd>
+        <dt class="gesture">Two-finger swipe</dt><dd>Reply, or double-click or hold to react</dd>
+      </dl>
+    </div>
+  </section>
 
-  <h2>Issues</h2>
-  <p>Something not working? <a href="https://github.com/jchin14/messageBae/issues">Open an issue on GitHub</a>.</p>
+  <section class="row">
+    <h2>Issues</h2>
+    <p>Something not working? <a href="https://github.com/jchin14/messageBae/issues">Open an issue on GitHub</a>.</p>
+  </section>
 
-  <h2>Install</h2>
-  <div class="card">
-    <ol>
-      <li>Download the <code>.dmg</code> from the latest release.</li>
-      <li>Open it and drag messageBae into Applications.</li>
-      <li>Log in to Facebook.</li>
-    </ol>
-  </div>
-  <p class="muted">Signed and notarised by Apple for your security.</p>
+  <section class="row">
+    <h2>Install</h2>
+    <div>
+      <ol class="steps">
+        <li>Download the <code>.dmg</code> from the <a href="https://github.com/jchin14/messageBae/releases/latest">latest release</a>.</li>
+        <li>Open it and drag messageBae into Applications.</li>
+        <li>Log in to Facebook.</li>
+      </ol>
+      <p class="muted">Signed and notarised by Apple for your security.</p>
+    </div>
+  </section>
 
-  <h2>Updates</h2>
-  <p>messageBae tells you when a new version is out. Download the new <code>.dmg</code> from <a href="https://github.com/jchin14/messageBae/releases">Releases</a> and replace the old app. Your settings stay.</p>
-  <p>Supporters get auto update: <a href="https://buymeacoffee.com/jchin14">donate any amount</a>, copy the supporter code from the thank you page and paste it into <b>messageBae &gt; Turn On Auto Update…</b>. New versions then install themselves. Donations help cover the Apple developer account, domain and hosting.</p>
+  <section class="row">
+    <h2>Updates</h2>
+    <div>
+      <p>messageBae tells you when a new version is out. Download the new <code>.dmg</code> from <a href="https://github.com/jchin14/messageBae/releases">Releases</a> and replace the old app. Your settings stay.</p>
+      <p>Supporters get auto update: <a href="https://buymeacoffee.com/jchin14">donate any amount</a>, copy the supporter code from the thank you page and paste it into <span class="menu">messageBae &gt; Turn On Auto Update…</span>. New versions then install themselves. Donations help cover the Apple developer account, domain and hosting.</p>
+    </div>
+  </section>
 
   <footer>
     <p>Unofficial. Not made by or linked to Meta.</p>
     <p>Free for personal use. Any redistribution, or use in a commercial setting, needs my OK first: <a href="mailto:licensing@jchin.au">licensing@jchin.au</a>.</p>
-    <p><a href="https://github.com/jchin14/messageBae">GitHub</a> · <a href="privacy/">Privacy</a> · <a href="https://buymeacoffee.com/jchin14">Buy me a coffee ☕</a></p>
-    <p>© 2026 <a href="https://jchin.au">Jonathan Chin</a></p>
+    <p><a href="https://github.com/jchin14/messageBae">GitHub</a> · <a href="privacy/">Privacy</a> · <a href="https://buymeacoffee.com/jchin14">Buy me a coffee</a> · © 2026 <a href="https://jchin.au">Jonathan Chin</a></p>
   </footer>
 </main>
 </body>
