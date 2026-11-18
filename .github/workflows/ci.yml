@@ -1,0 +1,33 @@
+name: CI
+
+# Quick checks. Runs on every push and PR to the public repo, and on dev only when
+# scripts/release.sh or gh workflow run ci.yml starts it (dev's branch is master).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+      - name: JS syntax
+        run: for f in src/*.js scripts/*.js; do node --check "$f"; done
+      - name: JSON is valid
+        run: node -e 'require("./package.json"); require("./src/defaults.json")'
+      - name: Shell syntax
+        run: for f in scripts/*.sh; do sh -n "$f"; done

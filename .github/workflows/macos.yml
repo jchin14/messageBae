@@ -1,0 +1,41 @@
+name: macOS build
+
+# Builds the app on a real Mac for every release tag pushed to the public repo,
+# where Actions minutes are free. Unsigned: the signed, notarized DMG is still
+# built locally with npm run dist. This checks the build works and keeps a copy.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Build (unsigned)
+        run: npx electron-builder --mac --publish never -c.mac.notarize=false
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: App launches
+        run: |
+          APP=$(ls -d dist/mac*/messageBae.app | head -1)
+          "$APP/Contents/MacOS/messageBae" &
+          sleep 15
+          pgrep -x messageBae
+          pkill -x messageBae || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: messageBae-mac
+          path: |
+            dist/*.dmg
+            dist/*.zip

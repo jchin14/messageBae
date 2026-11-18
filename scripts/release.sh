@@ -13,6 +13,8 @@ printf "Publish v$V to the PUBLIC repo? [y/N] "
 read -r ok
 [ "$ok" = y ] || { echo "Cancelled."; exit 1; }
 git push -q origin master
+# Quick checks on dev (CI never runs on push there, to save private Actions minutes).
+gh workflow run ci.yml -R jchin14/messageBae-dev --ref master 2>/dev/null || echo "Couldn't start dev CI, carrying on."
 
 # One commit with master's files, on top of the last public release.
 # Private files (CHANGES.md, TODO.md, AI files, Dependabot) are left out of the public tree.
